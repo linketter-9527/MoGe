@@ -1,0 +1,10 @@
+# ninja log v7
+0	12869	1755951362156391923	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cus/selective_scan_core_fwd.o	d666b70f72d54561
+0	18858	1755951362156391923	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cus/selective_scan.o	4e50d237cc72a09
+0	29609	1755951362156391923	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cus/selective_scan_core_bwd.o	70b2e76593b79812
+1	11917	1755951392221735544	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cusndstate/selective_scan_core_fwd.o	bcdb54914a213bf8
+1	18627	1755951392221735544	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cusndstate/selective_scan_ndstate.o	e1956a3c81d0aa9a
+1	30475	1755951392221735544	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cusndstate/selective_scan_core_bwd.o	a8966d14ef2dc60d
+2	18328	1755951423133079686	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cusoflex/selective_scan_core_fwd.o	c32faa0b6cf20d0c
+2	19083	1755951423133079686	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cusoflex/selective_scan_oflex.o	dd5a09c6b160e5fe
+2	47681	1755951423133079686	/home/link/MoGe/SegMAN/kernels/selective_scan/build/temp.linux-x86_64-3.10/csrc/selective_scan/cusoflex/selective_scan_core_bwd.o	1197c21c28d95e34
