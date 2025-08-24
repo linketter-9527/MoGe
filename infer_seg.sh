@@ -1,0 +1,11 @@
+python moge/scripts/infer.py \
+    -i example/side_frames \
+    -o output/side_frames \
+    --pretrained weights/moge-2-vitl-normal.pt \
+    --device cuda:0 \
+    --maps \
+    --glb \
+    --ply \
+    --seg-config SegMAN/segmentation/local_configs/segman/large/segman_l_cityscapes.py \
+    --seg-checkpoint SegMAN/segmentation/checkpoint/segman_l_cityscapes.pth \
+    --seg-palette 'cityscapes'
