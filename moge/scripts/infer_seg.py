@@ -42,6 +42,7 @@ Defaults to 9. Note that it is irrelevant to the output size, which is always th
 @click.option('--seg-checkpoint', type=str, default=None, help='SegMAN checkpoint file path for semantic segmentation')
 @click.option('--seg-palette', type=str, default='cityscapes', help='Color palette used for segmentation map')
 # @click.option('--seg-out-file', type=str, default=None, help='Path to output segmentation file')
+@click.option('--extract_target', type=int, default=0, help='extract target class number. Defaults to 0.')
 
 def main(
     input_path: str,
@@ -63,6 +64,7 @@ def main(
     seg_config: str,
     seg_checkpoint: str,
     seg_palette: str,
+    extract_target: int,
     # seg_out_file: str,
 ):  
     import cv2
@@ -78,6 +80,7 @@ def main(
     from moge.utils.io import save_glb, save_ply
     from moge.utils.vis import colorize_depth, colorize_normal
     from moge.utils.geometry_numpy import depth_occlusion_edge_numpy
+    from moge.utils.extract_edge import extract_edge, visualize_edges
     import utils3d
 
     device = torch.device(device_name)
@@ -110,7 +113,7 @@ def main(
     if seg_config and seg_checkpoint:
         try:
             seg_model = init_segmentor(seg_config, seg_checkpoint, device=device_name)
-            print(f"SegMAN semantic segmentation model loaded from {seg_checkpoint}")
+            # print(f"SegMAN semantic segmentation model loaded from {seg_checkpoint}")
         except Exception as e:
             print(f"Failed to load SegMAN model: {e}")
             seg_model = None
@@ -133,8 +136,8 @@ def main(
                 seg_result = inference_segmentor(seg_model, str(image_path))
                 # 显示或保存分割结果
                 show_result_pyplot(seg_model, str(image_path), seg_result, get_palette(seg_palette), 
-                                  out_file=str(save_path / 'seg.png'), opacity=0.9)
-                print(f"Semantic segmentation completed for {image_path}")
+                                  out_file=str(save_path / 'seg.png'), opacity=0.9, block=False)
+                # print(f"Semantic segmentation completed for {image_path}")
             except Exception as e:
                 print(f"Semantic segmentation failed for {image_path}: {e}")
 
@@ -143,8 +146,32 @@ def main(
         points, depth, mask, intrinsics = output['points'].cpu().numpy(), output['depth'].cpu().numpy(), output['mask'].cpu().numpy(), output['intrinsics'].cpu().numpy()
         normal = output['normal'].cpu().numpy() if 'normal' in output else None
 
-        # save_path = Path(output_path, image_path.relative_to(input_path).parent, image_path.stem)
-        # save_path.mkdir(exist_ok=True, parents=True)
+        # 提取目标边沿
+        # 将分割结果转换为类别掩码（假设类别为0）
+        seg_mask = seg_result[extract_target].astype(np.uint8)
+        # 提取目标边沿
+        edges = extract_edge(
+            normal_map=normal[0],  # 取第一个batch
+            depth_map=depth[0],    # 取第一个batch
+            segmentation_mask=seg_mask,
+            class_id=extract_target,       # 根据实际分割类别调整
+            theta_threshold=20.0,
+            height_threshold=0.05
+        )        
+                
+        # 可视化目标边沿
+        edge_visualization = visualize_edges(
+            image=image,
+            edge_mask=edges,
+            color=(255, 0, 0),  # 红色边沿
+            thickness=2
+        )
+                
+        # 保存边沿可视化结果
+        cv2.imwrite(str(save_path / 'edges.png'), cv2.cvtColor(edge_visualization, cv2.COLOR_RGB2BGR))
+                
+        # 保存原始边沿掩码
+        cv2.imwrite(str(save_path / 'edges_mask.png'), (edges * 255).astype(np.uint8))       
 
         # Save images / maps
         if save_maps_:

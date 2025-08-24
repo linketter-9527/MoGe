@@ -144,7 +144,7 @@ def show_result_pyplot(model,
     plt.imshow(mmcv.bgr2rgb(img))
     plt.title(title)
     plt.tight_layout()
-    plt.show(block=block)
+    # plt.show(block=block)
     if out_file is not None:
         mmcv.imwrite(img, out_file)
 
