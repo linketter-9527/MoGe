@@ -30,6 +30,7 @@ from .stdc_head import STDCHead
 from .uper_head import UPerHead
 
 from .segman_decoder import SegMANDecoder
+from .segman_decoder_ref import SegMANGeoFusionDecoder
 
 __all__ = [
     'FCNHead', 'PSPHead', 'ASPPHead', 'PSAHead', 'NLHead', 'GCHead', 'CCHead',
@@ -38,5 +39,5 @@ __all__ = [
     'PointHead', 'APCHead', 'DMHead', 'LRASPPHead', 'SETRUPHead',
     'SETRMLAHead', 'DPTHead', 'SETRMLAHead', 'SegmenterMaskTransformerHead',
     'SegformerHead', 'ISAHead', 'STDCHead', 'IterativeDecodeHead',
-    'KernelUpdateHead', 'KernelUpdator','SegMANDecoder'
+    'KernelUpdateHead', 'KernelUpdator','SegMANDecoder', "SegMANGeoFusionDecoder",
 ]

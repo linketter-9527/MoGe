@@ -14,7 +14,7 @@ import time
 import click
 
 # 添加SegMAN相关的导入
-from mmseg.apis import inference_segmentor, init_segmentor, show_result_pyplot
+from mmseg.apis import inference_segmentor_ref, init_segmentor_ref, show_result_pyplot_ref
 from mmseg.core.evaluation import get_palette
 
 @click.command(help='Inference script')
@@ -38,7 +38,7 @@ Defaults to 9. Note that it is irrelevant to the output size, which is always th
 @click.option('--seg-config', type=str, default=None, help='SegMAN config file path for semantic segmentation')
 @click.option('--seg-checkpoint', type=str, default=None, help='SegMAN checkpoint file path for semantic segmentation')
 @click.option('--seg-palette', type=str, default='cityscapes', help='Color palette used for segmentation map')
-@click.option('--extract-target', type=int, default=0, help='extract target class number. Defaults to 0.')
+# @click.option('--extract-target', type=int, default=0, help='extract target class number. Defaults to 0.')
 
 @click.option('--maps', 'save_maps_', is_flag=True, help='Whether to save the output maps (image, point map, depth map, normal map, mask) and fov.')
 @click.option('--glb', 'save_glb_', is_flag=True, help='Whether to save the output as a.glb file. The color will be saved as a texture.')
@@ -63,7 +63,7 @@ def main(
     seg_config: str,
     seg_checkpoint: str,
     seg_palette: str,
-    extract_target: int,
+    # extract_target: int,
     save_maps_: bool,
     save_glb_: bool,
     save_ply_: bool,
@@ -85,6 +85,7 @@ def main(
     from moge.utils.vis import colorize_depth, colorize_normal
     from moge.utils.geometry_numpy import depth_occlusion_edge_numpy
     from moge.utils.extract_edge import extract_edge, visualize_edges
+    from moge.utils.extract_edge_from_depth_normal import extract_edge_from_depth_normal
     import utils3d
 
     device = torch.device(device_name)
@@ -116,7 +117,7 @@ def main(
     seg_model = None
     if seg_config and seg_checkpoint:
         try:
-            seg_model = init_segmentor(seg_config, seg_checkpoint, device=device_name)
+            seg_model = init_segmentor_ref(seg_config, seg_checkpoint, device=device_name)
             # print(f"SegMAN semantic segmentation model loaded from {seg_checkpoint}")
         except Exception as e:
             print(f"Failed to load SegMAN model: {e}")
@@ -140,15 +141,26 @@ def main(
         save_path = Path(output_path)
         save_path.mkdir(exist_ok=True, parents=True)
 
+        start_time = time.time()
+        # MoGe2推理
+        output = model.infer(image_tensor, fov_x=fov_x_, resolution_level=resolution_level, num_tokens=num_tokens, use_fp16=use_fp16)
+        points, depth, mask, intrinsics = output['points'].cpu().numpy(), output['depth'].cpu().numpy(), output['mask'].cpu().numpy(), output['intrinsics'].cpu().numpy()
+        normal = output['normal'].cpu().numpy() if 'normal' in output else None
+        elapsed = time.time() - start_time
+        print(f"[MoGe] Inference took {elapsed:.3f} seconds.")
+        total_moge_time += elapsed
+
+        geo_edge = extract_edge_from_depth_normal(depth, normal)
+
         seg_start_time = time.time()
         # 执行语义分割（如果SegMAN模型已加载）
         seg_result = None
         if seg_model is not None:
             try:
-                seg_result = inference_segmentor(seg_model, str(image_path))
+                seg_result = inference_segmentor_ref(seg_model, str(image_path), geo_edge)
                 # 显示或保存分割结果
                 if save_seg_:
-                    show_result_pyplot(seg_model, str(image_path), seg_result, get_palette(seg_palette), 
+                    show_result_pyplot_ref(seg_model, str(image_path), seg_result, get_palette(seg_palette), 
                                         out_file=str(save_path / f'{file_prefix}seg.png'), opacity=0.9, block=False)
                 # print(f"Semantic segmentation completed for {image_path}")
             except Exception as e:
@@ -157,15 +169,7 @@ def main(
         print(f"[SegMAN] Semantic segmentation took {seg_elapsed:.3f} seconds.")
         total_seg_time += seg_elapsed
 
-        start_time = time.time()
-        # MoGe推理
-        output = model.infer(image_tensor, fov_x=fov_x_, resolution_level=resolution_level, num_tokens=num_tokens, use_fp16=use_fp16)
-        points, depth, mask, intrinsics = output['points'].cpu().numpy(), output['depth'].cpu().numpy(), output['mask'].cpu().numpy(), output['intrinsics'].cpu().numpy()
-        normal = output['normal'].cpu().numpy() if 'normal' in output else None
-        elapsed = time.time() - start_time
-        print(f"[MoGe] Inference took {elapsed:.3f} seconds.")
-        total_moge_time += elapsed
-
+        """"
         # 提取目标边沿
         # 将分割结果转换为类别掩码（假设类别为0）
         seg_mask = seg_result[extract_target].astype(np.uint8)
@@ -186,6 +190,7 @@ def main(
             color=(255, 0, 0),  # 红色边沿
             thickness=2
         )
+        """
 
         if save_edge_:
             # 保存边沿可视化结果

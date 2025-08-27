@@ -9,7 +9,7 @@ def extract_edge(
     class_id: int = 0,
     theta_threshold: float = 20.0,  # 法向夹角阈值（度）
     height_threshold: float = 0.05,  # 高度差阈值（米）
-    dilation_size: int = 3,
+    dilation_size: int = 5,
     min_edge_length: int = 10
 ) -> np.ndarray:
     """
@@ -77,8 +77,11 @@ def extract_edge(
         
         max_height_diff = max(depth_diffs) if depth_diffs else 0.0
         
-        # 判断是否为边沿点
-        if (max_angle_diff > theta_threshold and 
+        # 判断是否为边沿点and/or
+        # if (max_angle_diff > theta_threshold or 
+        #    max_height_diff > height_threshold):
+        #    edge_mask[y, x] = 1
+        if (max_angle_diff > theta_threshold or 
             max_height_diff > height_threshold):
             edge_mask[y, x] = 1
     

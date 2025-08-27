@@ -133,11 +133,7 @@ def main(
             image = cv2.resize(image, (width, height), cv2.INTER_AREA)
         image_tensor = torch.tensor(image / 255, dtype=torch.float32, device=device).permute(2, 0, 1)
 
-        # save_path = Path(output_path, image_path.relative_to(input_path).parent, image_path.stem)
-        # save_path.mkdir(exist_ok=True, parents=True)
-
-        file_prefix = f"{image_path.stem}_"
-        save_path = Path(output_path)
+        save_path = Path(output_path, image_path.relative_to(input_path).parent, image_path.stem)
         save_path.mkdir(exist_ok=True, parents=True)
 
         seg_start_time = time.time()
@@ -149,7 +145,7 @@ def main(
                 # 显示或保存分割结果
                 if save_seg_:
                     show_result_pyplot(seg_model, str(image_path), seg_result, get_palette(seg_palette), 
-                                        out_file=str(save_path / f'{file_prefix}seg.png'), opacity=0.9, block=False)
+                                        out_file=str(save_path / 'seg.png'), opacity=0.9, block=False)
                 # print(f"Semantic segmentation completed for {image_path}")
             except Exception as e:
                 print(f"Semantic segmentation failed for {image_path}: {e}")
@@ -189,22 +185,22 @@ def main(
 
         if save_edge_:
             # 保存边沿可视化结果
-            cv2.imwrite(str(save_path / f'{file_prefix}edges.png'), cv2.cvtColor(edge_visualization, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(str(save_path / 'edges.png'), cv2.cvtColor(edge_visualization, cv2.COLOR_RGB2BGR))
                 
             # 保存原始边沿掩码
-            # cv2.imwrite(str(save_path / f'{file_prefix}edges_mask.png'), (edges * 255).astype(np.uint8))       
+            # cv2.imwrite(str(save_path / 'edges_mask.png'), (edges * 255).astype(np.uint8))       
 
         # Save images / maps
         if save_maps_:
-            cv2.imwrite(str(save_path / f'{file_prefix}image.jpg'), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(str(save_path / f'{file_prefix}depth_vis.png'), cv2.cvtColor(colorize_depth(depth), cv2.COLOR_RGB2BGR))
-            cv2.imwrite(str(save_path / f'{file_prefix}depth.exr'), depth, [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
-            cv2.imwrite(str(save_path / f'{file_prefix}mask.png'), (mask * 255).astype(np.uint8))
-            cv2.imwrite(str(save_path / f'{file_prefix}points.exr'), cv2.cvtColor(points, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
+            cv2.imwrite(str(save_path / 'image.jpg'), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(str(save_path / 'depth_vis.png'), cv2.cvtColor(colorize_depth(depth), cv2.COLOR_RGB2BGR))
+            cv2.imwrite(str(save_path / 'depth.exr'), depth, [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
+            cv2.imwrite(str(save_path / 'mask.png'), (mask * 255).astype(np.uint8))
+            cv2.imwrite(str(save_path / 'points.exr'), cv2.cvtColor(points, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
             if normal is not None:
-                cv2.imwrite(str(save_path / f'{file_prefix}normal.png'), cv2.cvtColor(colorize_normal(normal), cv2.COLOR_RGB2BGR))
+                cv2.imwrite(str(save_path / 'normal.png'), cv2.cvtColor(colorize_normal(normal), cv2.COLOR_RGB2BGR))
             fov_x, fov_y = utils3d.numpy.intrinsics_to_fov(intrinsics)
-            with open(save_path / f'{file_prefix}fov.json', 'w') as f:
+            with open(save_path / 'fov.json', 'w') as f:
                 json.dump({
                     'fov_x': round(float(np.rad2deg(fov_x)), 2),
                     'fov_y': round(float(np.rad2deg(fov_y)), 2),
@@ -239,10 +235,10 @@ def main(
                 vertex_normals = vertex_normals * [1, -1, -1]
 
         if save_glb_:
-            save_glb(save_path / f'{file_prefix}mesh.glb', vertices, faces, vertex_uvs, image, vertex_normals)
+            save_glb(save_path / 'mesh.glb', vertices, faces, vertex_uvs, image, vertex_normals)
 
         if save_ply_:
-            save_ply(save_path / f'{file_prefix}pointcloud.ply', vertices, np.zeros((0, 3), dtype=np.int32), vertex_colors, vertex_normals)
+            save_ply(save_path / 'pointcloud.ply', vertices, np.zeros((0, 3), dtype=np.int32), vertex_colors, vertex_normals)
 
         if show:
             trimesh.Trimesh(
