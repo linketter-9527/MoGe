@@ -2,6 +2,7 @@
 import matplotlib.pyplot as plt
 import mmcv
 import torch
+import numpy as np
 from mmcv.parallel import collate, scatter
 from mmcv.runner import load_checkpoint
 
@@ -100,6 +101,23 @@ def inference_segmentor_ref(model, imgs, geo_edge):
         data = scatter(data, [device])[0]
     else:
         data['img_metas'] = [i.data[0] for i in data['img_metas']]
+
+    # 处理geo_edge参数
+    if geo_edge is not None:
+        if isinstance(geo_edge, np.ndarray):
+            # 确保geo_edge有正确的维度 [B, 1, H, W]
+            if geo_edge.ndim == 2:  # [H, W] -> [1, 1, H, W]
+                geo_edge = geo_edge[np.newaxis, np.newaxis, :, :]
+            elif geo_edge.ndim == 3:  # [B, H, W] -> [B, 1, H, W]
+                geo_edge = geo_edge[:, np.newaxis, :, :]
+            geo_edge = torch.from_numpy(geo_edge).float().to(device)
+        elif isinstance(geo_edge, torch.Tensor):
+            # 确保Tensor有正确的维度 [B, 1, H, W]
+            if geo_edge.ndim == 2:  # [H, W] -> [1, 1, H, W]
+                geo_edge = geo_edge.unsqueeze(0).unsqueeze(0)
+            elif geo_edge.ndim == 3:  # [B, H, W] -> [B, 1, H, W]
+                geo_edge = geo_edge.unsqueeze(1)
+            geo_edge = geo_edge.to(device)
 
     # forward the model
     with torch.no_grad():

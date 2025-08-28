@@ -152,6 +152,10 @@ def main(
 
         geo_edge = extract_edge_from_depth_normal(depth, normal)
 
+        # 保存单张边缘图，转换为8位灰度图 (0-255)
+        edge_8bit = (geo_edge * 255).astype(np.uint8)
+        cv2.imwrite(str(save_path / f'{file_prefix}edge.png'), edge_8bit)
+
         seg_start_time = time.time()
         # 执行语义分割（如果SegMAN模型已加载）
         seg_result = None
@@ -169,7 +173,7 @@ def main(
         print(f"[SegMAN] Semantic segmentation took {seg_elapsed:.3f} seconds.")
         total_seg_time += seg_elapsed
 
-        """"
+        """
         # 提取目标边沿
         # 将分割结果转换为类别掩码（假设类别为0）
         seg_mask = seg_result[extract_target].astype(np.uint8)
