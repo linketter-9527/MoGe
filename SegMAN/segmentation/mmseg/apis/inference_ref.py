@@ -103,7 +103,7 @@ def inference_segmentor_ref(model, imgs, geo_edge):
 
     # forward the model
     with torch.no_grad():
-        result = model(return_loss=False, rescale=True, **data)
+        result = model(return_loss=False, rescale=True, geo_edge=geo_edge, **data)
     return result
 
 

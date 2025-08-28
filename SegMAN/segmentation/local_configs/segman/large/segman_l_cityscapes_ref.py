@@ -8,7 +8,7 @@ _base_ = [
 # model settings
 norm_cfg = dict(type='SyncBN', requires_grad=True)
 model = dict(
-    type='EncoderDecoder',
+    type='EncoderDecoderRefine',
     backbone=dict(
         type='SegMANEncoder_l',
         pretrained='../../../SegMAN_Encoder_l.pth.tar',

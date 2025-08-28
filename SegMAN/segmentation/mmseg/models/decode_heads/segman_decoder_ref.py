@@ -999,7 +999,51 @@ class SegMANGeoFusionDecoder(BaseDecodeHead):
 
         return out
 
- 
+    def forward_test(self, inputs, img_metas, test_cfg, geo_edge=None):
+        """
+        Forward function for testing with optional geo_edge input.
+
+        Args:
+            inputs (list[Tensor]): List of multi-level img features.
+            img_metas (list[dict]): List of image info dict where each dict
+                has 'img_shape', 'scale_factor', 'flip', and may contain
+                'filename', 'ori_shape', 'pad_shape', 'img_norm_cfg'.
+            test_cfg (dict): Test config (not used here, for API compatibility).
+            geo_edge (Tensor or np.ndarray, optional): Edge map for fusion.
+
+        Returns:
+            Tensor: Output segmentation map of shape (N, num_classes, H, W)
+        """
+        # 1. 处理输入特征
+        x = self._transform_inputs(inputs)
+
+        # 2. MLP decoder
+        x, c2, c3, c4 = self.forward_mlp_decoder(x)
+
+        # 3. WinSSM decoder
+        x = self.forward_winssm(x, c2, c3, c4)
+
+        # 4. 融合 MoGe 边缘
+        if geo_edge is not None:
+            if isinstance(geo_edge, np.ndarray):
+                geo_edge = torch.from_numpy(geo_edge).float().to(x.device)
+            if geo_edge.ndim == 3:  # [B,H,W] -> [B,1,H,W]
+                geo_edge = geo_edge.unsqueeze(1)
+            geo_edge = F.interpolate(geo_edge, size=x.shape[2:], mode='bilinear', align_corners=False)
+            geo_edge_feat = self.edge_proj(geo_edge)
+            x = (1 - self.alpha) * x + self.alpha * geo_edge_feat
+
+        # 5. 分类卷积
+        output = self.cls_seg(x)
+
+        # 6. 确保输出与原图像尺寸一致
+        ori_h, ori_w = img_metas[0]['ori_shape'][:2]
+        if output.shape[2:] != (ori_h, ori_w):
+            output = F.interpolate(output, size=(ori_h, ori_w), mode='bilinear', align_corners=False)
+
+        return output
+
+
     def forward(self, inputs, **kwargs):
         geo_edge = kwargs.get('geo_edge', None)
         x = self._transform_inputs(inputs)
