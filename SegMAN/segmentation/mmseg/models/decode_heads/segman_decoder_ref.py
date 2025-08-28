@@ -54,7 +54,7 @@ except:
 
 import selective_scan_cuda_oflex
 
-
+import matplotlib.pyplot as plt
 
 # use_gemm_na(True)
 # use_fused_na(True)
@@ -927,11 +927,22 @@ class SegMANGeoFusionDecoder(BaseDecodeHead):
         _c3 = resize(_c3, size=inputs[1].size()[2:],mode='bilinear',align_corners=False).contiguous()
        
         _c = self.linear_fuse(torch.cat([_c4, _c3, _c2], dim=1))
+
+        # 显示MLP解码器阶段结果
+        self._show_feature_maps({
+            'C4 Feature': _c4[0].mean(dim=0).cpu().detach().numpy(),
+            'C3 Feature': _c3[0].mean(dim=0).cpu().detach().numpy(),
+            'C2 Feature': _c2[0].mean(dim=0).cpu().detach().numpy(),
+            'Fused Feature': _c[0].mean(dim=0).cpu().detach().numpy()
+        }, "MLP Decoder Stage")
         
         return _c, _c2, _c3, _c4
 
 
     def forward_winssm(self, x: torch.Tensor, c2, c3, c4, c1=None):
+        # 显示winssm阶段输入
+        self._show_single_feature(x[0].mean(dim=0).cpu().detach().numpy(), "WinSSM Input")
+
         # 裁剪或填充操作
         if x.size(-1) % 4 != 0:
             pad_width = (4 - (x.size(-1) % 4)) % 4
@@ -969,6 +980,9 @@ class SegMANGeoFusionDecoder(BaseDecodeHead):
                 size=x.size()[2:],
                 mode='bilinear',
                 align_corners=self.align_corners)
+
+        # 显示winssm阶段输出
+        self._show_single_feature(_out[0].mean(dim=0).cpu().detach().numpy(), "WinSSM Output")
         
         _out_ = self.proj_out(_out)
         if c2.size(-1) != _out_.size(-1):
@@ -1006,11 +1020,52 @@ class SegMANGeoFusionDecoder(BaseDecodeHead):
         x = self._transform_inputs(inputs)
         x, c2, c3, c4 = self.forward_mlp_decoder(x)
         x = self.forward_winssm(x, c2, c3, c4)
+
+        # 显示融合前特征
+        self._show_single_feature(x[0].mean(dim=0).cpu().detach().numpy(), "Before Edge Fusion")
+
         # 融合 MoGe2 边缘
         if geo_edge is not None:
             geo_edge = F.interpolate(geo_edge, size=x.shape[2:], mode='bilinear', align_corners=False)
             geo_edge_feat = self.edge_proj(geo_edge)
+            # 显示边缘特征
+            self._show_single_feature(geo_edge_feat[0].mean(dim=0).cpu().detach().numpy(), "Edge Feature")
             x = (1 - self.alpha) * x + self.alpha * geo_edge_feat
+            # 显示融合后特征
+            self._show_single_feature(x[0].mean(dim=0).cpu().detach().numpy(), "After Edge Fusion")
         output = self.cls_seg(x)
+        # 显示最终输出
+        self._show_single_feature(output[0].mean(dim=0).cpu().detach().numpy(), "Final Output")
         return output
+
+    def _show_single_feature(self, feature_map, title):
+        """显示单个特征图"""
+        plt.figure(figsize=(8, 6))
+        plt.imshow(feature_map, cmap='viridis')
+        plt.colorbar()
+        plt.title(title)
+        plt.axis('off')
+        plt.tight_layout()
+        plt.show(block=True)  # 阻塞显示
+        # plt.pause(2)  # 显示2秒
+        # plt.close()  # 关闭窗口
+    
+    def _show_feature_maps(self, feature_maps, stage_name):
+        """显示多个特征图"""
+        num_features = len(feature_maps)
+        fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+        axes = axes.flatten()
+        
+        for i, (name, feature) in enumerate(feature_maps.items()):
+            if i < len(axes):
+                im = axes[i].imshow(feature, cmap='viridis')
+                axes[i].set_title(name)
+                axes[i].axis('off')
+                plt.colorbar(im, ax=axes[i])
+        
+        plt.suptitle(f"{stage_name} - Intermediate Features")
+        plt.tight_layout()
+        plt.show(block=True)  # 阻塞显示
+        # plt.pause(3)  # 显示3秒
+        # plt.close()  # 关闭窗口
     
