@@ -14,7 +14,7 @@ import time
 import click
 
 # 添加SegMAN相关的导入
-from mmseg.apis import inference_segmentor, init_segmentor, show_result_pyplot
+from mmseg.apis import inference_segmentor_efs, init_segmentor_efs, show_result_pyplot_efs
 from mmseg.core.evaluation import get_palette
 
 @click.command(help='Inference script')
@@ -120,7 +120,7 @@ def main(
     seg_model = None
     if seg_config and seg_checkpoint:
         try:
-            seg_model = init_segmentor(seg_config, seg_checkpoint, device=device_name)
+            seg_model = init_segmentor_efs(seg_config, seg_checkpoint, device=device_name)
             # print(f"SegMAN semantic segmentation model loaded from {seg_checkpoint}")
         except Exception as e:
             print(f"Failed to load SegMAN model: {e}")
@@ -145,23 +145,6 @@ def main(
         save_path = Path(output_path)
         save_path.mkdir(exist_ok=True, parents=True)
 
-        seg_start_time = time.time()
-        # 执行语义分割（如果SegMAN模型已加载）
-        seg_result = None
-        if seg_model is not None:
-            try:
-                seg_result = inference_segmentor(seg_model, str(image_path))
-                # 显示或保存分割结果
-                if save_seg_:
-                    show_result_pyplot(seg_model, str(image_path), seg_result, get_palette(seg_palette), 
-                                        out_file=str(save_path / f'{file_prefix}seg.png'), opacity=0.9, block=False)
-                # print(f"Semantic segmentation completed for {image_path}")
-            except Exception as e:
-                print(f"Semantic segmentation failed for {image_path}: {e}")
-        seg_elapsed = time.time() - seg_start_time
-        print(f"[SegMAN] Semantic segmentation took {seg_elapsed:.3f} seconds.")
-        total_seg_time += seg_elapsed
-
         moge_start_time = time.time()
         # MoGe2推理
         output = model.infer(image_tensor, fov_x=fov_x_, resolution_level=resolution_level, num_tokens=num_tokens, use_fp16=use_fp16)
@@ -174,65 +157,82 @@ def main(
         # print(f"[Debug] depth:  shape: {depth.shape}, dtype: {depth.dtype}")
         # print(f"[Debug] normal:  shape: {normal.shape}, dtype: {normal.dtype}")
 
-        edge_start_time = time.time()
-        geo_edge = extract_edge_from_depth_normal(depth, normal, mode="canny")
-
-        # 保存单张边缘图，转换为8位灰度图 (0-255)
-        # edge_8bit = (geo_edge * 255).astype(np.uint8)
-        # cv2.imwrite(str(save_path / f'{file_prefix}edge.png'), edge_8bit)
-
-        # 将分割结果转换为类别掩码（假设类别为0）
-        # seg_mask = seg_result[extract_target].astype(np.uint8)
-        # target_edge = extract_target_edge(seg_mask, geo_edge, class_id=extract_target, dilation_size=5)
-
-        seg_mask = (seg_result[0] == extract_target).astype(np.uint8)  # 直接生成目标类别掩码
-
-        """
-        plt.figure(figsize=(8, 6))
-        plt.title("seg_mask")
-        plt.imshow(seg_mask, cmap="gray")
-        plt.axis("off")
-        plt.tight_layout()
-        plt.show(block=True)
-        """
-
-        target_edge = extract_target_edge(seg_mask, geo_edge, dilation_size=5)
-
-        # cv2.imwrite(str(save_path / f'{file_prefix}target_edge.png'), target_edge)
-
-        """
-        # 提取目标边沿
-        # 将分割结果转换为类别掩码（假设类别为0）
-        seg_mask = seg_result[extract_target].astype(np.uint8)
-        # 提取目标边沿
-        edges = extract_edge(
-            normal_map=normal,  # 取第一个batch
-            depth_map=depth,    # 取第一个batch
-            segmentation_mask=seg_mask,
-            class_id=extract_target,       # 根据实际分割类别调整
-            theta_threshold=20.0,
-            height_threshold=0.05
-        )        
-        """
-
-        edge_elapsed = time.time() - edge_start_time
-        print(f"[edge] Extract edge took {edge_elapsed:.3f} seconds.")
-        total_edge_time += edge_elapsed
-
-        # 可视化目标边沿
-        target_edge_visualization = visualize_target_edges(
-            image=image,
-            target_edge_mask=target_edge,
-            color=(255, 0, 0),  # 红色边沿
-            thickness=2
-        )
+        seg_start_time = time.time()
+        # 执行语义分割（如果SegMAN模型已加载）
+        seg_result = None
+        if seg_model is not None:
+            try:
+                seg_result = inference_segmentor_efs(seg_model, str(image_path), depth, normal)
+                # 显示或保存分割结果
+                if save_seg_:
+                    show_result_pyplot_efs(seg_model, str(image_path), seg_result, get_palette(seg_palette), 
+                                        out_file=str(save_path / f'{file_prefix}seg.png'), opacity=0.9, block=False)
+                # print(f"Semantic segmentation completed for {image_path}")
+            except Exception as e:
+                print(f"Semantic segmentation failed for {image_path}: {e}")
+        seg_elapsed = time.time() - seg_start_time
+        print(f"[SegMAN] Semantic segmentation took {seg_elapsed:.3f} seconds.")
+        total_seg_time += seg_elapsed
 
         if save_edge_:
+            edge_start_time = time.time()
+            geo_edge = extract_edge_from_depth_normal(depth, normal, mode="canny")
+
+            # 保存单张边缘图，转换为8位灰度图 (0-255)
+            # edge_8bit = (geo_edge * 255).astype(np.uint8)
+            # cv2.imwrite(str(save_path / f'{file_prefix}edge.png'), edge_8bit)
+
+            # 将分割结果转换为类别掩码（假设类别为0）
+            # seg_mask = seg_result[extract_target].astype(np.uint8)
+            # target_edge = extract_target_edge(seg_mask, geo_edge, class_id=extract_target, dilation_size=5)
+
+            seg_mask = (seg_result[0] == extract_target).astype(np.uint8)  # 直接生成目标类别掩码
+
+            """
+            plt.figure(figsize=(8, 6))
+            plt.title("seg_mask")
+            plt.imshow(seg_mask, cmap="gray")
+            plt.axis("off")
+            plt.tight_layout()
+            plt.show(block=True)
+            """
+
+            target_edge = extract_target_edge(seg_mask, geo_edge, dilation_size=5)
+
+            # cv2.imwrite(str(save_path / f'{file_prefix}target_edge.png'), target_edge)
+
+            """
+            # 提取目标边沿
+            # 将分割结果转换为类别掩码（假设类别为0）
+            seg_mask = seg_result[extract_target].astype(np.uint8)
+            # 提取目标边沿
+            edges = extract_edge(
+                normal_map=normal,  # 取第一个batch
+                depth_map=depth,    # 取第一个batch
+                segmentation_mask=seg_mask,
+                class_id=extract_target,       # 根据实际分割类别调整
+                theta_threshold=20.0,
+                height_threshold=0.05
+            )        
+            """
+
+            # 可视化目标边沿
+            target_edge_visualization = visualize_target_edges(
+                image=image,
+                target_edge_mask=target_edge,
+                color=(255, 0, 0),  # 红色边沿
+                thickness=2
+            )
+        
             # 保存边沿可视化结果
             cv2.imwrite(str(save_path / f'{file_prefix}edges.png'), cv2.cvtColor(target_edge_visualization, cv2.COLOR_RGB2BGR))
                 
             # 保存原始边沿掩码
             # cv2.imwrite(str(save_path / f'{file_prefix}edges_mask.png'), (edges * 255).astype(np.uint8))       
+
+            edge_elapsed = time.time() - edge_start_time
+            print(f"[edge] Extract edge took {edge_elapsed:.3f} seconds.")
+            total_edge_time += edge_elapsed
 
         # Save images / maps
         if save_maps_:

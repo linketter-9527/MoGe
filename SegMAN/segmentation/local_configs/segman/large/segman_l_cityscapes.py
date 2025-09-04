@@ -12,6 +12,7 @@ model = dict(
     backbone=dict(
         type='SegMANEncoder_l',
         pretrained='../../../SegMAN_Encoder_l.pth.tar',
+        # in_chans=7,
         style='pytorch'),
     decode_head=dict(
         type='SegMANDecoder',

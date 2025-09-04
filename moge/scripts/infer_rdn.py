@@ -45,6 +45,7 @@ Defaults to 9. Note that it is irrelevant to the output size, which is always th
 @click.option('--ply', 'save_ply_', is_flag=True, help='Whether to save the output as a.ply file. The color will be saved as vertex colors.')
 @click.option('--seg', 'save_seg_', is_flag=True, help='Whether to save the output as semantic segmentation.')
 @click.option('--edge', 'save_edge_', is_flag=True, help='Whether to save the output as extract edge.')
+@click.option('--rdn', 'save_rdn_', is_flag=True, help='Whether to save the output as a.npy file. The rgb、depth、normal will be saved as npy.')
 @click.option('--show', 'show', is_flag=True, help='Whether show the output in a window. Note that this requires pyglet<2 installed as required by trimesh.')
 
 def main(
@@ -69,6 +70,7 @@ def main(
     save_ply_: bool,
     save_seg_: bool,
     save_edge_: bool,
+    save_rdn_: bool,
     show: bool,
 ):  
     import cv2
@@ -112,9 +114,9 @@ def main(
     if use_fp16:
         model.half()
     
-    if not any([save_maps_, save_glb_, save_ply_, save_seg_, save_edge_]):
-        warnings.warn('No output format specified. Defaults to saving all. Please use "--maps", "--glb", "--ply", "--seg" or "--edge" to specify the output.')
-        save_maps_ = save_glb_ = save_ply_ = save_seg_ = save_edge_ = True
+    if not any([save_maps_, save_glb_, save_ply_, save_seg_, save_edge_, save_rdn_]):
+        warnings.warn('No output format specified. Defaults to saving all. Please use "--maps", "--glb", "--ply", "--seg", "--edge" or "--rdn" to specify the output.')
+        save_maps_ = save_glb_ = save_ply_ = save_seg_ = save_edge_ = save_rdn_ = True
 
     # 初始化SegMAN语义分割模型（如果提供了配置和检查点）
     seg_model = None
@@ -126,9 +128,19 @@ def main(
             print(f"Failed to load SegMAN model: {e}")
             seg_model = None
     
-    total_seg_time = 0.0
-    total_moge_time = 0.0
-    total_edge_time = 0.0
+    # total_seg_time = 0.0
+    # total_moge_time = 0.0
+    # total_edge_time = 0.0
+
+    save_path = Path(output_path)
+    save_path.mkdir(exist_ok=True, parents=True)
+    depth_dir = save_path / "depth"
+    depth_dir.mkdir(exist_ok=True, parents=True)
+    normal_dir = save_path / "normal"
+    normal_dir.mkdir(exist_ok=True, parents=True)
+    mask_dir = save_path / "mask"
+    mask_dir.mkdir(exist_ok=True, parents=True)
+
 
     for image_path in (pbar := tqdm(image_paths, desc='Inference', disable=len(image_paths) <= 1)):
         image = cv2.cvtColor(cv2.imread(str(image_path)), cv2.COLOR_BGR2RGB)
@@ -142,9 +154,11 @@ def main(
         # save_path.mkdir(exist_ok=True, parents=True)
 
         file_prefix = f"{image_path.stem}_"
-        save_path = Path(output_path)
-        save_path.mkdir(exist_ok=True, parents=True)
+        file_noprefix = f"{image_path.stem}"
+        # save_path = Path(output_path)
+        # save_path.mkdir(exist_ok=True, parents=True)
 
+        """
         seg_start_time = time.time()
         # 执行语义分割（如果SegMAN模型已加载）
         seg_result = None
@@ -161,19 +175,21 @@ def main(
         seg_elapsed = time.time() - seg_start_time
         print(f"[SegMAN] Semantic segmentation took {seg_elapsed:.3f} seconds.")
         total_seg_time += seg_elapsed
+        """
 
-        moge_start_time = time.time()
+        # moge_start_time = time.time()
         # MoGe2推理
         output = model.infer(image_tensor, fov_x=fov_x_, resolution_level=resolution_level, num_tokens=num_tokens, use_fp16=use_fp16)
         points, depth, mask, intrinsics = output['points'].cpu().numpy(), output['depth'].cpu().numpy(), output['mask'].cpu().numpy(), output['intrinsics'].cpu().numpy()
         normal = output['normal'].cpu().numpy() if 'normal' in output else None
-        moge_elapsed = time.time() - moge_start_time
-        print(f"[MoGe] Inference took {moge_elapsed:.3f} seconds.")
-        total_moge_time += moge_elapsed
+        # moge_elapsed = time.time() - moge_start_time
+        # print(f"[MoGe] Inference took {moge_elapsed:.3f} seconds.")
+        # total_moge_time += moge_elapsed
 
         # print(f"[Debug] depth:  shape: {depth.shape}, dtype: {depth.dtype}")
         # print(f"[Debug] normal:  shape: {normal.shape}, dtype: {normal.dtype}")
 
+        """
         edge_start_time = time.time()
         geo_edge = extract_edge_from_depth_normal(depth, normal, mode="canny")
 
@@ -186,6 +202,7 @@ def main(
         # target_edge = extract_target_edge(seg_mask, geo_edge, class_id=extract_target, dilation_size=5)
 
         seg_mask = (seg_result[0] == extract_target).astype(np.uint8)  # 直接生成目标类别掩码
+        """
 
         """
         plt.figure(figsize=(8, 6))
@@ -196,9 +213,11 @@ def main(
         plt.show(block=True)
         """
 
+        """
         target_edge = extract_target_edge(seg_mask, geo_edge, dilation_size=5)
 
         # cv2.imwrite(str(save_path / f'{file_prefix}target_edge.png'), target_edge)
+        """
 
         """
         # 提取目标边沿
@@ -214,7 +233,8 @@ def main(
             height_threshold=0.05
         )        
         """
-
+        
+        """
         edge_elapsed = time.time() - edge_start_time
         print(f"[edge] Extract edge took {edge_elapsed:.3f} seconds.")
         total_edge_time += edge_elapsed
@@ -226,6 +246,7 @@ def main(
             color=(255, 0, 0),  # 红色边沿
             thickness=2
         )
+        """
 
         if save_edge_:
             # 保存边沿可视化结果
@@ -234,21 +255,35 @@ def main(
             # 保存原始边沿掩码
             # cv2.imwrite(str(save_path / f'{file_prefix}edges_mask.png'), (edges * 255).astype(np.uint8))       
 
+        # 保存 RGB + Depth + Normal 为 7 通道 .npy
+        if save_rdn_:
+            # RGB (H,W,3), depth (H,W,1), normal (H,W,3)
+            rgb_image = image.astype(np.float32) / 255.0
+            depth_expanded = depth[..., None].astype(np.float32)
+            normal_float = normal.astype(np.float32)
+            # 拼接成 (H, W, 7)
+            rdn = np.concatenate([rgb_image, depth_expanded, normal_float], axis=-1)
+            np.save(str(save_path / f'{file_noprefix}.npy'), rdn)
+            time.sleep(0.2)
+
         # Save images / maps
         if save_maps_:
-            cv2.imwrite(str(save_path / f'{file_prefix}image.jpg'), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
-            cv2.imwrite(str(save_path / f'{file_prefix}depth_vis.png'), cv2.cvtColor(colorize_depth(depth), cv2.COLOR_RGB2BGR))
-            cv2.imwrite(str(save_path / f'{file_prefix}depth.exr'), depth, [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
-            cv2.imwrite(str(save_path / f'{file_prefix}mask.png'), (mask * 255).astype(np.uint8))
-            cv2.imwrite(str(save_path / f'{file_prefix}points.exr'), cv2.cvtColor(points, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
+            # cv2.imwrite(str(save_path / f'{file_prefix}image.jpg'), cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+            # cv2.imwrite(str(save_path / f'{file_prefix}depth_vis.png'), cv2.cvtColor(colorize_depth(depth), cv2.COLOR_RGB2BGR))
+            cv2.imwrite(str(depth_dir / f'{file_noprefix}.exr'), depth, [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
+            cv2.imwrite(str(mask_dir / f'{file_noprefix}.png'), (mask * 255).astype(np.uint8))
+            # cv2.imwrite(str(save_path / f'{file_prefix}points.exr'), cv2.cvtColor(points, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
             if normal is not None:
-                cv2.imwrite(str(save_path / f'{file_prefix}normal.png'), cv2.cvtColor(colorize_normal(normal), cv2.COLOR_RGB2BGR))
+                # cv2.imwrite(str(save_path / f'{file_prefix}normal.png'), cv2.cvtColor(colorize_normal(normal), cv2.COLOR_RGB2BGR))
+                cv2.imwrite(str(normal_dir / f'{file_noprefix}.exr'), normal, [cv2.IMWRITE_EXR_TYPE, cv2.IMWRITE_EXR_TYPE_FLOAT])
+            """
             fov_x, fov_y = utils3d.numpy.intrinsics_to_fov(intrinsics)
             with open(save_path / f'{file_prefix}fov.json', 'w') as f:
                 json.dump({
                     'fov_x': round(float(np.rad2deg(fov_x)), 2),
                     'fov_y': round(float(np.rad2deg(fov_y)), 2),
                 }, f)
+            """
 
         # Export mesh网格 & visulization
         if save_glb_ or save_ply_ or show:
@@ -293,9 +328,9 @@ def main(
                 process=False
             ).show()  
 
-    print(f"Total SegMAN time: {total_seg_time:.3f} seconds.")
-    print(f"Total MoGe time: {total_moge_time:.3f} seconds.")
-    print(f"Total edge time: {total_edge_time:.3f} seconds.")
+    # print(f"Total SegMAN time: {total_seg_time:.3f} seconds.")
+    # print(f"Total MoGe time: {total_moge_time:.3f} seconds.")
+    # print(f"Total edge time: {total_edge_time:.3f} seconds.")
 
 if __name__ == '__main__':
     main()

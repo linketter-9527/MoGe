@@ -837,15 +837,138 @@ class MLP(nn.Module):
         x = x.permute(0,2,1).reshape(n, -1, h, w)
         
         return x
+    
+class EdgeAwareRefine(nn.Module):
+    """
+    利用几何边缘构造非边界权重，对特征做局部加权均值，提升同物体内部一致性。
+    - 在边界处（edge高）停止扩散；在非边界处（edge低）更平滑。
+    """
+    def __init__(self, channels, kernel_size=7, eps=1e-6):
+        super().__init__()
+        assert kernel_size % 2 == 1, "kernel_size must be odd."
+        self.channels = channels
+        self.kernel_size = kernel_size
+        self.eps = eps
+
+    def forward(self, x, edge):
+        """
+        Args:
+            x: (N, C, H, W) 待细化的语义特征
+            edge: (N, 1, H, W) 几何边缘(数值越大=越像边界)
+        Returns:
+            refined x: (N, C, H, W)
+        """
+        N, C, H, W = x.shape
+        if edge.ndim == 3:
+            edge = edge.unsqueeze(1)                  # -> (N,1,H,W)
+
+        # 生成“非边界”权重，边界越明显权重越低（阻止跨边界扩散）
+        # 这里做个简单的反转 + 轻微压缩，范围仍在[0,1]
+        non_edge = 1.0 - edge.clamp(0, 1)
+
+        # depthwise 加权均值: num = Σ(x * w)，den = Σ(w)，w=非边界权重的局部窗口
+        k = self.kernel_size
+        pad = k // 2
+        # 构造 depthwise 卷积核（C组）
+        weight = x.new_ones(C, 1, k, k) / (k * k)
+
+        # 将 non_edge 扩到 C 通道，以做每通道加权
+        w_map = non_edge.expand(N, C, H, W)
+
+        # 先对 (x * w) 做box滤波，再对 w 做box滤波，最后相除
+        num = F.conv2d(x * w_map, weight, padding=pad, groups=C)
+        den = F.conv2d(w_map,     weight, padding=pad, groups=C)
+
+        refined = num / (den + self.eps)
+        return refined
+    
+class EdgeGuidedNorm(nn.Module):
+    """
+    边缘引导的特征归一化：统一物体内部特征，保持边界细节
+    """
+    def __init__(self, eps=1e-5):
+        super().__init__()
+        self.eps = eps
+
+    def forward(self, x, edge):
+        """
+        x: (N, C, H, W) 视觉特征
+        edge: (N, 1, H, W) 边缘图, 数值越大越靠近边界
+        """
+        if edge.ndim == 3:
+            edge = edge.unsqueeze(1)  # (N,1,H,W)
+
+        non_edge = 1.0 - edge.clamp(0, 1)  # 内部区域 mask
+        N, C, H, W = x.shape
+        mask = non_edge.expand(N, C, H, W)
+
+        # 计算非边界区域的均值和方差
+        mean = (x * mask).sum(dim=(2, 3), keepdim=True) / (mask.sum(dim=(2, 3), keepdim=True) + self.eps)
+        var  = ((x - mean) ** 2 * mask).sum(dim=(2, 3), keepdim=True) / (mask.sum(dim=(2, 3), keepdim=True) + self.eps)
+
+        # 内部区域归一化
+        x_norm = (x - mean) / torch.sqrt(var + self.eps)
+
+        # 边界区域保留原始特征
+        x_refined = non_edge * x_norm + edge * x
+        return x_refined
+    
+class EdgeAwareAttention(nn.Module):
+    """
+    基于几何边缘信息的自注意力模块
+    """
+    def __init__(self, channels, kernel_size=3, eps=1e-6):
+        super(EdgeAwareAttention, self).__init__()
+        assert kernel_size % 2 == 1, "kernel_size must be odd."
+        self.channels = channels
+        self.kernel_size = kernel_size
+        self.eps = eps
+
+        # 用于生成注意力权重的卷积层
+        self.attention_conv = ConvModule(
+            in_channels=1,  # 输入是边缘信息（单通道）
+            out_channels=channels,  # 输出是与输入特征相同的通道数
+            kernel_size=kernel_size,
+            padding=kernel_size // 2,
+            norm_cfg=dict(type='SyncBN', requires_grad=True),
+            act_cfg=dict(type='ReLU')
+        )
+
+    def forward(self, x, geo_edge):
+        """
+        Args:
+            x: (N, C, H, W) 输入特征图
+            geo_edge: (N, 1, H, W) 输入的几何边缘图
+        Returns:
+            Attention-enhanced x: (N, C, H, W)
+        """
+        N, C, H, W = x.shape
+
+        # 计算注意力权重（由几何边缘图生成）
+        geo_edge_feat = self.attention_conv(geo_edge)
+
+        # 归一化注意力权重
+        geo_edge_feat = F.sigmoid(geo_edge_feat)
+
+        # 将注意力权重应用到特征图
+        attention_map = geo_edge_feat.expand(N, C, H, W)  # 扩展到与特征图相同的大小
+        x = x * attention_map  # 根据注意力权重加权特征图
+
+        return x
 
 @HEADS.register_module()
 class SegMANGeoFusionDecoder(BaseDecodeHead):
-    def __init__(self, image_size=512,channel_split=False,short_cut=False, interpolate_mode='bilinear',use_rpb=False, alpha=0.5, **kwargs):
+    def __init__(self, image_size=512,channel_split=False,short_cut=False, interpolate_mode='bilinear',use_rpb=False, 
+                 alpha=0.9,                  # 边界增强权重
+                 smooth_alpha=0.3,           # 区域一致性细化的融合权重
+                 smooth_kernel=3,            # 细化窗口（奇数，越大越平滑）
+                 **kwargs):
         super(SegMANGeoFusionDecoder, self).__init__(input_transform="multiple_select", **kwargs) #input_transform='multiple_select'
         image_size = to_2tuple(image_size)
         image_size = [(image_size[0]//2**(i+2), image_size[1]//2**(i+2)) for i in range(4)]
         
         self.alpha = alpha  # MoGe2边缘融合权重
+        self.smooth_alpha = smooth_alpha
         self.embed_dim = kwargs['channels']
 
         # MoGe2 边缘投影
@@ -857,6 +980,15 @@ class SegMANGeoFusionDecoder(BaseDecodeHead):
             norm_cfg=dict(type='SyncBN', requires_grad=True),
             act_cfg=dict(type='ReLU')
         )
+
+        # 区域一致性细化模块
+        self.edge_refine = EdgeAwareRefine(self.embed_dim, kernel_size=smooth_kernel)
+
+        # 边缘感知的自注意力模块
+        self.edge_attention = EdgeAwareAttention(self.embed_dim)
+
+        # edge-guided normalization
+        self.edge_guided_norm = EdgeGuidedNorm()
 
         # downsample using convolutions
         self.conv_downsample_2 = ConvModule(
@@ -1024,15 +1156,37 @@ class SegMANGeoFusionDecoder(BaseDecodeHead):
         # 显示融合前特征
         self._show_single_feature(x[0].mean(dim=0).cpu().detach().numpy(), "Before Edge Fusion")
 
-        # 融合 MoGe2 边缘
+        # 融合 MoGe2 边缘，边界增强：用edge_proj把单通道边缘投到embed_dim后，与主特征线性融合
         if geo_edge is not None:
-            geo_edge = F.interpolate(geo_edge, size=x.shape[2:], mode='bilinear', align_corners=False)
-            geo_edge_feat = self.edge_proj(geo_edge)
+            if isinstance(geo_edge, np.ndarray):
+                geo_edge = torch.from_numpy(geo_edge).float().to(x.device)
+            if geo_edge.ndim == 3:
+                geo_edge = geo_edge.unsqueeze(1)  # (N,1,H,W)
+            geo_edge = F.interpolate(geo_edge, size=x.shape[2:], mode='bilinear', align_corners=False)            
+            # 边界增强（增强边界对比）
+            # edge_feat  = self.edge_proj(geo_edge)
+
             # 显示边缘特征
-            self._show_single_feature(geo_edge_feat[0].mean(dim=0).cpu().detach().numpy(), "Edge Feature")
-            x = (1 - self.alpha) * x + self.alpha * geo_edge_feat
+            # self._show_single_feature(edge_feat[0].mean(dim=0).cpu().detach().numpy(), "Edge Feature")
+
+            # x = (1 - self.alpha) * x + self.alpha * edge_feat
+
+            # 引入边缘感知的自注意力机制，进一步提升内部一致性
+            # x = self.edge_attention(x, geo_edge)
+
+            # 区域一致性细化：在非边界区域做加权平滑，统一同物体内部表征(局部加权均值滤波)
+            # 这里直接用 geo_edge（越大越像边界），EdgeAwareRefine 内部会用 1-edge 作为权重
+            x_smooth = self.edge_refine(x, edge=geo_edge)
+            x = (1.0 - self.smooth_alpha) * x + self.smooth_alpha * x_smooth
+
+            x = self.edge_attention(x, geo_edge)
+
+            # 边缘引导归一化 (全局一致性)
+            # x = self.edge_guided_norm(x, geo_edge)
+
             # 显示融合后特征
             self._show_single_feature(x[0].mean(dim=0).cpu().detach().numpy(), "After Edge Fusion")
+
         output = self.cls_seg(x)
         # 显示最终输出
         self._show_single_feature(output[0].mean(dim=0).cpu().detach().numpy(), "Final Output")

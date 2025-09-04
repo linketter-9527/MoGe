@@ -150,7 +150,7 @@ def main(
         print(f"[MoGe] Inference took {elapsed:.3f} seconds.")
         total_moge_time += elapsed
 
-        geo_edge = extract_edge_from_depth_normal(depth, normal)
+        geo_edge = extract_edge_from_depth_normal(depth, normal, mode="canny")
 
         # 保存单张边缘图，转换为8位灰度图 (0-255)
         edge_8bit = (geo_edge * 255).astype(np.uint8)
