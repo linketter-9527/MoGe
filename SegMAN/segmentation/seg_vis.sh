@@ -1,7 +1,7 @@
 python demo.py \
-    ../../example/frame/frame.jpg \
+    ../../example/frame/gopro.jpg \
     local_configs/segman/tiny/segman_t_cityscapes.py \
     checkpoint/segman_t_cityscapes.pth \
     --palette 'cityscapes' \
-    --out-file show/segman_demo_t.png \
+    --out-file show/cityscapes/city_t_gopro.png \
     --device 'cuda:0'

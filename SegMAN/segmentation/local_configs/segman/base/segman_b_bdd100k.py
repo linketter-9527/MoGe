@@ -11,7 +11,7 @@ model = dict(
     type='EncoderDecoder',
     backbone=dict(
         type='SegMANEncoder_b',
-        pretrained='/path/to/SegMAN_Encoder_b.pth.tar',
+        pretrained='pretrained/SegMAN_Encoder_b.pth.tar',
         style='pytorch'),
     decode_head=dict(
         type='SegMANDecoder',
@@ -42,6 +42,6 @@ lr_config = dict(_delete_=True, policy='poly',
                  warmup_ratio=1e-6,
                  power=1.0, min_lr=0.0, by_epoch=False)
 
-data = dict(samples_per_gpu=2)  # total batch size depends on GPUs
+data = dict(samples_per_gpu=1)  # total batch size depends on GPUs
 
 evaluation = dict(interval=4000, metric='mIoU', save_best='mIoU')

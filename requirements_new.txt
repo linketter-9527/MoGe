@@ -1,2 +1,28 @@
 scikit-image    # ==0.25.2
 scikit-learn    # ==1.7.1
+
+"""
+To support torch>=2.1.0, you also need to import from packaging import version and replace Line 75 of 
+/miniconda3/envs/segman/lib/python3.10/site-packages/mmcv/parallel/_functions.py with the following:
+
+        from packaging import version
+
+        if version.parse(torch.__version__) >= version.parse('2.1.0'):
+            streams = [_get_stream(torch.device("cuda", device)) for device in target_gpus]
+        else:
+            streams = [_get_stream(device) for device in target_gpus]
+
+AttributeError: 'MMDistributedDataParallel' object has no attribute '_use_replicated_tensor_module'
+这个问题是 MMCV 和 PyTorch 版本不兼容 导致的。
+具体原因：
+1. 在 torch>=1.12 / torch>=2.0 的 DDP 实现里，引入了 _use_replicated_tensor_module 属性（或者相关逻辑）。
+2. 但你现在用的 mmcv/SegMAN 定制版本 里 MMDistributedDataParallel 还尝试访问这个属性，结果发现 PyTorch 的 DDP 版本结构不一样，于是报错。
+方法：手动补丁（临时解决）
+如果你不想动环境，可以直接在 mmcv/parallel/distributed.py 里绕过这个属性。
+replace Line 159 and 190 of 
+/miniconda3/envs/segman/lib/python3.10/site-packages/mmcv/parallel/distributed.py with the following:
+
+        # 兼容不同 PyTorch 版本
+        use_replicated = getattr(self, "_use_replicated_tensor_module", False)
+        module_to_run = self._replicated_tensor_module if use_replicated else self.module
+"""
