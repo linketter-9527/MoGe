@@ -7,7 +7,7 @@ python moge/scripts/infer_rdn.py \
     --seg-checkpoint SegMAN/segmentation/checkpoint/segman_l_cityscapes.pth \
     --seg-palette 'cityscapes' \
     --extract-target 0 \
-    --maps
+    --rdn
     # --maps \
     # --glb \
     # --ply \
