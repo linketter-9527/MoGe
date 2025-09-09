@@ -8,7 +8,7 @@ from mmcv.cnn.utils import revert_sync_batchnorm
 from mmseg.models import build_segmentor
 
 
-def build_dummy_batch(H=256, W=512, B=2, device='cpu'):
+def build_dummy_batch(H=256, W=512, B=2, device='cuda'):
     # RGB image
     img = torch.randn(B, 3, H, W, device=device)
     # Depth (1ch) and Normal (3ch)
@@ -37,7 +37,7 @@ def main():
     parser.add_argument('--config', required=True, help='Path to config file')
     parser.add_argument('--height', type=int, default=256)
     parser.add_argument('--width', type=int, default=512)
-    parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
+    parser.add_argument('--device', type=str, default='cuda')
     args = parser.parse_args()
 
     cfg = Config.fromfile(args.config)
@@ -51,27 +51,35 @@ def main():
 
     model = build_segmentor(cfg.model, train_cfg=cfg.get('train_cfg'), test_cfg=cfg.get('test_cfg'))
     model.init_weights()
-    # SyncBN is not supported on CPU/DP in this standalone script; convert to BN
-    model = revert_sync_batchnorm(model)
-
+    
     model.to(args.device)
     model.train()  # forward_train path
 
     img, img_metas, gt, depth, normal = build_dummy_batch(args.height, args.width, B=2, device=args.device)
 
     print('Running forward_train with dummy batch ...')
-    losses = model.forward_train(img, img_metas, gt, depth=depth, normal=normal)
-    # Summarize loss scalars
-    total = 0.0
-    for k, v in losses.items():
-        if torch.is_tensor(v):
-            total = total + float(v.detach().mean().cpu())
-        elif isinstance(v, (list, tuple)) and len(v) > 0 and torch.is_tensor(v[0]):
-            total = total + float(sum([_.detach().mean().cpu() for _ in v]))
-    print('Loss keys:', list(losses.keys()))
-    print('Total loss (approx):', total)
-
-    print('SMOKE_OK')
+    try:
+        losses = model.forward_train(img, img_metas, gt, depth=depth, normal=normal)
+        # Summarize loss scalars
+        total = 0.0
+        for k, v in losses.items():
+            if torch.is_tensor(v):
+                total = total + float(v.detach().mean().cpu())
+            elif isinstance(v, (list, tuple)) and len(v) > 0 and torch.is_tensor(v[0]):
+                total = total + float(sum([_.detach().mean().cpu() for _ in v]))
+        print('Loss keys:', list(losses.keys()))
+        print('Total loss (approx):', total)
+        print('SMOKE_OK')
+    except Exception as e:
+        print('SMOKE_FAIL during forward:', repr(e))
+        # Try without depth/normal as fallback
+        try:
+            losses = model.forward_train(img, img_metas, gt)
+            print('Fallback OK (without depth/normal), but DNF neck may not work properly')
+            print('Loss keys:', list(losses.keys()))
+        except Exception as e2:
+            print('Fallback also failed:', repr(e2))
+        sys.exit(1)
 
 
 if __name__ == '__main__':

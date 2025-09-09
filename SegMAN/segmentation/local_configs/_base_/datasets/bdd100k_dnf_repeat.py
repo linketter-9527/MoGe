@@ -1,6 +1,6 @@
 # dataset settings
 dataset_type = 'BDD100KDataset'
-data_root = 'data/bdd100k/'
+data_root = '../../data/bdd100k/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 crop_size = (512, 1024)
@@ -18,7 +18,7 @@ train_pipeline = [
     dict(type='Pad', size_divisor=32),
     dict(type='PadGeometryToMatch'),
     dict(type='DefaultFormatBundleDNF'),
-    dict(type='CollectDNF', keys=['img', 'gt_semantic_seg', 'depth', 'normal']),
+    dict(type='CollectDNF', keys=['img', 'gt_semantic_seg', 'depth', 'normal', 'depth_mask']),
 ]
 
 test_pipeline = [
@@ -36,7 +36,7 @@ test_pipeline = [
             dict(type='Pad', size_divisor=32),
             dict(type='PadGeometryToMatch'),
             dict(type='DefaultFormatBundleDNF'),
-            dict(type='CollectDNF', keys=['img', 'depth', 'normal']),
+            dict(type='CollectDNF', keys=['img', 'depth', 'normal', 'depth_mask']),
         ])
 ]
 

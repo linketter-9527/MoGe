@@ -201,11 +201,11 @@ class AddDepthNormalPathsDNF(object):
 
 @PIPELINES.register_module()
 class LoadNpyDepthNormalFromFileDNF(object):
-    """Load a 7-channel npy (BGR uint8 + depth float16 + normal float16) and split into img/depth/normal.
+    """Load a 7-channel npy (BGR float16 + depth float16 + normal float16) and split into img/depth/normal.
 
-    Required keys: img_prefix (optional), img_info['filename'].
+    Required keys: img_prefix (optional), img_info['filename']. 
     Added keys: 'img' (H,W,3 uint8), 'depth' (H,W float32), 'normal' (H,W,3 float32),
-                and common meta fields similar to LoadImageFromFileDNF.
+                'depth_mask' (H,W float32 in {0,1}), and common meta fields similar to LoadImageFromFileDNF.
     """
 
     def __init__(self, file_client_args=dict(backend='disk')):
@@ -218,14 +218,22 @@ class LoadNpyDepthNormalFromFileDNF(object):
         else:
             filename = results['img_info']['filename']
 
-        # Use numpy load directly from disk
+        # Use numpy to load the packed 7-channel array
         arr = np.load(filename)
         assert arr.ndim == 3 and arr.shape[2] == 7, \
             f"Expect HxWx7 npy, got shape {arr.shape} at {filename}"
-        # split
-        img = arr[:, :, :3].astype(np.uint8)  # BGR
-        depth = arr[:, :, 3].astype(np.float32)  # (H,W)
-        normal = arr[:, :, 4:7].astype(np.float32)  # (H,W,3)
+        # BGR channels are float16; convert to uint8 expected by Normalize(mean/std)
+        img = arr[:, :, :3].astype(np.uint8)  # Direct conversion from float16 to uint8
+        # Depth channel keep raw values (may contain +inf)
+        depth = arr[:, :, 3].astype(np.float32)
+        # Build finite mask (valid=1.0 where finite, invalid=0.0 where inf)
+        depth_mask = np.isfinite(depth).astype(np.float32)
+        # Normal channels float16 -> float32; keep raw values (no re-normalization here)
+        normal = arr[:, :, 4:7].astype(np.float32)
+        # Keep original normal values (no re-normalization); invalid regions will be masked later in the neck
+        # norm = np.linalg.norm(normal, axis=2, keepdims=True)
+        # norm = np.maximum(norm, 1e-6)
+        # normal = normal / norm
 
         results['filename'] = filename
         results['ori_filename'] = results['img_info']['filename']
@@ -241,6 +249,7 @@ class LoadNpyDepthNormalFromFileDNF(object):
             to_rgb=False)
         # Geometry payloads
         results['depth'] = depth
+        results['depth_mask'] = depth_mask
         results['normal'] = normal
         return results
 
@@ -254,7 +263,8 @@ class ResizeGeometryToMatch(object):
 
     Should be placed right after any spatial resize/op applied to 'img'.
     - depth: bilinear interpolation
-    - normal: bilinear per-channel followed by per-pixel L2 re-normalization
+    - normal: bilinear per-channel (no re-normalization)
+    - depth_mask: nearest-neighbor to preserve binary mask
     """
 
     def __init__(self, align_corners=False):
@@ -273,11 +283,15 @@ class ResizeGeometryToMatch(object):
                 n_resized = np.zeros((h, w, 3), dtype=np.float32)
                 for c in range(3):
                     n_resized[:, :, c] = cv2.resize(n[:, :, c], (w, h), interpolation=cv2.INTER_LINEAR)
-                # re-normalize to unit vectors, avoid divide by zero
-                norm = np.linalg.norm(n_resized, axis=2, keepdims=True)
-                norm = np.maximum(norm, 1e-6)
-                n_resized = n_resized / norm
+                # no re-normalization to preserve original normals' magnitude/direction as provided
+                # norm = np.linalg.norm(n_resized, axis=2, keepdims=True)
+                # norm = np.maximum(norm, 1e-6)
+                # n_resized = n_resized / norm
                 results['normal'] = n_resized
+        if 'depth_mask' in results:
+            m = results['depth_mask']
+            if m.shape[0] != h or m.shape[1] != w:
+                results['depth_mask'] = cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
         # update meta shapes to image if needed
         results['img_shape'] = results['img'].shape
         results['pad_shape'] = results['img'].shape
@@ -330,6 +344,18 @@ class PadGeometryToMatch(object):
                 results['normal'] = cv2.copyMakeBorder(
                     n, top, bottom, left, right, borderType=cv2.BORDER_CONSTANT,
                     value=self.pad_val_normal)
+        # pad depth_mask (binary)
+        if 'depth_mask' in results:
+            m = results['depth_mask']
+            mh, mw = m.shape[:2]
+            top = 0
+            bottom = target_h - mh
+            left = 0
+            right = target_w - mw
+            if bottom > 0 or right > 0:
+                results['depth_mask'] = cv2.copyMakeBorder(
+                    m, top, bottom, left, right, borderType=cv2.BORDER_CONSTANT,
+                    value=0.0)
         return results
 
     def __repr__(self):

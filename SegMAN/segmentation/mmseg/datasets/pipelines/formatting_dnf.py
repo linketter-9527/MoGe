@@ -223,6 +223,12 @@ class DefaultFormatBundleDNF(object):
                 normal = np.expand_dims(normal, -1)
             normal = np.ascontiguousarray(normal.transpose(2, 0, 1))
             results['normal'] = DC(to_tensorDNF(normal), stack=True)
+        if 'depth_mask' in results:
+            dm = results['depth_mask']
+            if len(dm.shape) == 2:
+                dm = dm[:, :, None]
+            dm = np.ascontiguousarray(dm.transpose(2, 0, 1))
+            results['depth_mask'] = DC(to_tensorDNF(dm), stack=True)
         return results
 
     def __repr__(self):
@@ -291,7 +297,19 @@ class CollectDNF(object):
         data = {}
         img_meta = {}
         for key in self.meta_keys:
-            img_meta[key] = results[key]
+            # Handle missing keys gracefully - provide default values
+            if key not in results:
+                if key == 'flip':
+                    img_meta[key] = False
+                elif key == 'flip_direction':
+                    img_meta[key] = None
+                elif key == 'scale_factor':
+                    img_meta[key] = 1.0
+                else:
+                    # For other missing keys, skip or provide appropriate defaults
+                    continue
+            else:
+                img_meta[key] = results[key]
         data['img_metas'] = DC(img_meta, cpu_only=True)
         for key in self.keys:
             data[key] = results[key]

@@ -122,7 +122,7 @@ def main():
     if args.cfg_options is not None:
         cfg.merge_from_dict(args.cfg_options)
 
-    cfg.find_unused_parameters = False
+    cfg.find_unused_parameters = True
     # set cudnn_benchmark
     if cfg.get('cudnn_benchmark', False):
         torch.backends.cudnn.benchmark = True
@@ -243,6 +243,17 @@ def main():
     model.CLASSES = datasets[0].CLASSES
     # passing checkpoint meta for saving best checkpoint
     meta.update(cfg.checkpoint_config.meta)
+    
+    # Add nan detection hook to optimizer config
+    if cfg.get('optimizer_config', None) is None:
+        cfg.optimizer_config = {}
+    
+    # Import and use NanDetectionHook for nan detection
+    from mmseg.core.hooks.nan_detection_hook import NanDetectionHook
+    cfg.optimizer_config['type'] = 'NanDetectionHook'
+    cfg.optimizer_config['detect_loss_nan'] = True
+    cfg.optimizer_config['detect_grad_nan'] = True
+    
     train_segmentor_dnf(
         model,
         datasets,

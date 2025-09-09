@@ -20,7 +20,7 @@ model = dict(
         channels=128,
         feat_proj_dim=192,
         dropout_ratio=0.1,
-        num_classes=150,  # 类别19个，错误设置为150个
+        num_classes=19,  # 类别19个，错误设置为150个
         norm_cfg=norm_cfg,
         align_corners=False,
         loss_decode=dict(type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0)),
@@ -43,5 +43,5 @@ lr_config = dict(_delete_=True, policy='poly',
                  power=1.0, min_lr=0.0, by_epoch=False)
 
 data = dict(samples_per_gpu=2) # batch size 8
-evaluation = dict(interval=4000, metric='mIoU')
+evaluation = dict(interval=4000, metric='mIoU', save_best='mIoU')
 

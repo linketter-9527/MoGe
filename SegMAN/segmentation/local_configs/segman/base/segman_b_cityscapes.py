@@ -43,5 +43,5 @@ lr_config = dict(_delete_=True, policy='poly',
                  power=1.0, min_lr=0.0, by_epoch=False)
 
 data = dict(samples_per_gpu=2) # total batch size 8
-evaluation = dict(interval=4000, metric='mIoU')
+evaluation = dict(interval=4000, metric='mIoU', save_best='mIoU')
 
