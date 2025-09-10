@@ -279,11 +279,13 @@ class MoGeModel(nn.Module):
                 if depth is not None:
                     depth *= metric_scale[:, None, None]
 
+            """
             # Apply mask
             if apply_mask and mask_binary is not None:
                 points = torch.where(mask_binary[..., None], points, torch.inf) if points is not None else None
                 depth = torch.where(mask_binary, depth, torch.inf) if depth is not None else None
                 normal = torch.where(mask_binary[..., None], normal, torch.zeros_like(normal)) if normal is not None else None
+            """
                     
         return_dict = {
             'points': points,

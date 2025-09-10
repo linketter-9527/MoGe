@@ -223,12 +223,7 @@ class DefaultFormatBundleDNF(object):
                 normal = np.expand_dims(normal, -1)
             normal = np.ascontiguousarray(normal.transpose(2, 0, 1))
             results['normal'] = DC(to_tensorDNF(normal), stack=True)
-        if 'depth_mask' in results:
-            dm = results['depth_mask']
-            if len(dm.shape) == 2:
-                dm = dm[:, :, None]
-            dm = np.ascontiguousarray(dm.transpose(2, 0, 1))
-            results['depth_mask'] = DC(to_tensorDNF(dm), stack=True)
+
         return results
 
     def __repr__(self):
@@ -316,7 +311,7 @@ class CollectDNF(object):
                 data[key] = results[key]
             else:
                 # 对于缺失的几何数据键，提供默认值或跳过
-                if key in ['depth', 'normal', 'depth_mask']:
+                if key in ['depth', 'normal']:
                     # 这些是几何数据键，如果缺失可以跳过
                     continue
                 else:

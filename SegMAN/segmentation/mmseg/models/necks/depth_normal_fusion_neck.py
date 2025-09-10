@@ -60,6 +60,7 @@ class DepthNormalFusionNeck(nn.Module):
         norm_cfg=None,
         act_cfg=None,
         fusion_type: str = 'gate',
+        depth_range: tuple = (0.0, 30.0),  # 新增参数：深度范围阈值
     ):
         super().__init__()
         assert isinstance(in_channels, (list, tuple)) and len(in_channels) == 4, \
@@ -70,6 +71,12 @@ class DepthNormalFusionNeck(nn.Module):
         self.act_cfg = act_cfg
         assert fusion_type in ('gate', 'film')
         self.fusion_type = fusion_type
+        
+        # 深度范围配置
+        self.depth_min = float(depth_range[0])
+        self.depth_max = float(depth_range[1])
+        assert self.depth_min >= 0.0 and self.depth_max > self.depth_min, \
+            f"depth_range must be positive and max > min, got {depth_range}"
 
         # Project DN to each level's channel dim after resizing to that level
         self.dn_proj = nn.ModuleList([
@@ -121,11 +128,21 @@ class DepthNormalFusionNeck(nn.Module):
             ) for ch in self.in_channels
         ])
 
+    def _generate_range_mask(self, depth):
+        """
+        生成0-30米范围的mask，确保：
+        - 深度值 > 0米（避免负值或无效值）
+        - 深度值 <= 30米（限制最大有效范围）
+        - 范围外的数据将被完全屏蔽，不参与后续融合计算
+        """
+        valid_mask = (depth > self.depth_min) & (depth <= self.depth_max)
+        return valid_mask.to(dtype=depth.dtype)
+
     def _parse_inputs(self, inputs):
-        """Return (rgb_feats_list, dn, depth_mask) strictly from tensors.
+        """Return (rgb_feats_list, dn, range_mask) strictly from tensors.
 
         Accepts one of the following input formats:
-          - dict with keys {'rgb_feats': [x1..x4], 'depth': Tensor(B,1,H,W), 'normal': Tensor(B,3,H,W), 'depth_mask': Tensor(B,1,H,W)}
+          - dict with keys {'rgb_feats': [x1..x4], 'depth': Tensor(B,1,H,W), 'normal': Tensor(B,3,H,W)}
           - list/tuple of length 6: [x1, x2, x3, x4, depth, normal]
           - list/tuple of length 5: [x1, x2, x3, x4, dn] where dn is concatenated (B,4,H,W)
         """
@@ -133,44 +150,48 @@ class DepthNormalFusionNeck(nn.Module):
             rgb_feats = inputs.get('rgb_feats', inputs.get('rgb'))
             depth = inputs.get('depth', None)
             normal = inputs.get('normal', None)
-            depth_mask = inputs.get('depth_mask', None)
             assert isinstance(rgb_feats, (list, tuple)) and len(rgb_feats) == 4, \
                 "'rgb_feats' must be a list/tuple of 4 tensors"
             assert (depth is not None) and (normal is not None), \
-                "dict input must provide both 'depth' and 'normal' tensors"
+                f"dict input must provide both 'depth' and 'normal' tensors, got keys: {list(inputs.keys())}"
             
             # Handle the case where depth/normal are lists (e.g., in distributed testing)
             if isinstance(depth, list):
                 depth = torch.cat(depth, dim=0)
             if isinstance(normal, list):
                 normal = torch.cat(normal, dim=0)
-            if isinstance(depth_mask, list):
-                depth_mask = torch.cat(depth_mask, dim=0)
             
-            # Don't modify depth here, keep original values for later masking at fusion level
+            # Generate range mask for 0-30 meters using the new method
+            range_mask = self._generate_range_mask(depth)
+            
             dn = torch.cat([depth, normal], dim=1)
-            return rgb_feats, dn, depth_mask
+            return rgb_feats, dn, range_mask
         else:
             assert isinstance(inputs, (list, tuple)), \
                 "inputs must be list/tuple or dict"
             if len(inputs) == 6:
                 rgb_feats = list(inputs[:4])
                 depth, normal = inputs[4], inputs[5]
+                # Generate range mask for 0-30 meters using the new method
+                range_mask = self._generate_range_mask(depth)
                 dn = torch.cat([depth, normal], dim=1)
-                return rgb_feats, dn, None
+                return rgb_feats, dn, range_mask
             elif len(inputs) == 5:
                 rgb_feats = list(inputs[:4])
                 dn = inputs[4]
                 assert dn.dim() == 4 and dn.size(1) == self.dn_in_channels, \
                     f"Expected concatenated dn with {self.dn_in_channels} channels"
-                return rgb_feats, dn, None
+                # For concatenated dn, extract depth channel to generate range mask
+                depth = dn[:, :1, :, :]  # Extract depth channel
+                range_mask = self._generate_range_mask(depth)
+                return rgb_feats, dn, range_mask
             else:
                 raise AssertionError(
                     "DepthNormalFusionNeck expects 6 inputs (4 rgb + depth + normal) "
                     "or 5 inputs (4 rgb + concatenated dn), or a dict with keys.")
 
     def forward(self, inputs):
-        rgb_feats, dn, depth_mask = self._parse_inputs(inputs)
+        rgb_feats, dn, range_mask = self._parse_inputs(inputs)
         assert len(rgb_feats) == 4 and all(isinstance(x, torch.Tensor) for x in rgb_feats)
 
         outs = []
@@ -180,30 +201,26 @@ class DepthNormalFusionNeck(nn.Module):
             # Prepare DN for this level
             if isinstance(dn, list):
                 # dn is list of (1,4,h,w) possibly different sizes; resize each to x spatial size
-                dn_resized_list = []
-                for b in range(B):
-                    dn_b = dn[b]
-                    dn_b = F.interpolate(dn_b, size=x.shape[2:], mode='bilinear', align_corners=False)
-                    dn_resized_list.append(dn_b)
-                dn_resized = torch.cat(dn_resized_list, dim=0)  # (B,4,H,W)
+                dn_resized = torch.cat([
+                    F.interpolate(dn_b, size=x.shape[2:], mode='bilinear', align_corners=False)
+                    for dn_b in dn
+                ], dim=0)  # (B,4,H,W)
             else:
                 # batched tensor
                 dn_resized = resize(dn, size=x.shape[2:], mode='bilinear', align_corners=False)
             dn_resized = dn_resized.to(x.device)
             
-            # Prepare depth mask for this level if available
+            # Prepare range mask for this level if available
             mask_resized = None
-            if depth_mask is not None:
-                if isinstance(depth_mask, list):
-                    mask_resized_list = []
-                    for b in range(B):
-                        mask_b = depth_mask[b]
-                        mask_b = F.interpolate(mask_b, size=x.shape[2:], mode='nearest')
-                        mask_resized_list.append(mask_b)
-                    mask_resized = torch.cat(mask_resized_list, dim=0)  # (B,1,H,W)
+            if range_mask is not None:
+                if isinstance(range_mask, list):
+                    mask_resized = torch.cat([
+                        F.interpolate(mask_b, size=x.shape[2:], mode='nearest')
+                        for mask_b in range_mask
+                    ], dim=0)  # (B,1,H,W)
                 else:
                     # Use nearest interpolation to preserve binary nature of mask
-                    mask_resized = resize(depth_mask, size=x.shape[2:], mode='nearest')
+                    mask_resized = resize(range_mask, size=x.shape[2:], mode='nearest')
                 mask_resized = mask_resized.to(x.device).clamp(0.0, 1.0)
 
             # IMPORTANT: mask depth and normal channels BEFORE any projection to avoid inf/NaN or interpolation leakage
@@ -213,7 +230,7 @@ class DepthNormalFusionNeck(nn.Module):
             # Project to match channels
             g = self.dn_proj[i](dn_resized)
             
-            # Apply depth mask to geometry guidance to suppress invalid regions
+            # Apply range mask to geometry guidance to suppress invalid regions
             if mask_resized is not None:
                 g = g * mask_resized  # Broadcasting: invalid regions contribute 0 to geometry
 

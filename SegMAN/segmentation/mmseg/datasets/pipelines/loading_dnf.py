@@ -205,7 +205,7 @@ class LoadNpyDepthNormalFromFileDNF(object):
 
     Required keys: img_prefix (optional), img_info['filename']. 
     Added keys: 'img' (H,W,3 uint8), 'depth' (H,W float32), 'normal' (H,W,3 float32),
-                'depth_mask' (H,W float32 in {0,1}), and common meta fields similar to LoadImageFromFileDNF.
+                and common meta fields similar to LoadImageFromFileDNF.
     """
 
     def __init__(self, file_client_args=dict(backend='disk')):
@@ -226,8 +226,6 @@ class LoadNpyDepthNormalFromFileDNF(object):
         img = arr[:, :, :3].astype(np.uint8)  # Direct conversion from float16 to uint8
         # Depth channel keep raw values (may contain +inf)
         depth = arr[:, :, 3].astype(np.float32)
-        # Build finite mask (valid=1.0 where finite, invalid=0.0 where inf)
-        depth_mask = np.isfinite(depth).astype(np.float32)
         depth = np.where(np.isfinite(depth), depth, 1024.0)
         # Normal channels float16 -> float32; keep raw values (no re-normalization here)
         normal = arr[:, :, 4:7].astype(np.float32)
@@ -250,7 +248,6 @@ class LoadNpyDepthNormalFromFileDNF(object):
             to_rgb=False)
         # Geometry payloads
         results['depth'] = depth
-        results['depth_mask'] = depth_mask
         results['normal'] = normal
         return results
 
@@ -265,7 +262,6 @@ class ResizeGeometryToMatch(object):
     Should be placed right after any spatial resize/op applied to 'img'.
     - depth: bilinear interpolation
     - normal: bilinear per-channel (no re-normalization)
-    - depth_mask: nearest-neighbor to preserve binary mask
     """
 
     def __init__(self, align_corners=False):
@@ -289,10 +285,7 @@ class ResizeGeometryToMatch(object):
                 # norm = np.maximum(norm, 1e-6)
                 # n_resized = n_resized / norm
                 results['normal'] = n_resized
-        if 'depth_mask' in results:
-            m = results['depth_mask']
-            if m.shape[0] != h or m.shape[1] != w:
-                results['depth_mask'] = cv2.resize(m, (w, h), interpolation=cv2.INTER_NEAREST)
+
         # update meta shapes to image if needed
         results['img_shape'] = results['img'].shape
         results['pad_shape'] = results['img'].shape
@@ -345,18 +338,7 @@ class PadGeometryToMatch(object):
                 results['normal'] = cv2.copyMakeBorder(
                     n, top, bottom, left, right, borderType=cv2.BORDER_CONSTANT,
                     value=self.pad_val_normal)
-        # pad depth_mask (binary)
-        if 'depth_mask' in results:
-            m = results['depth_mask']
-            mh, mw = m.shape[:2]
-            top = 0
-            bottom = target_h - mh
-            left = 0
-            right = target_w - mw
-            if bottom > 0 or right > 0:
-                results['depth_mask'] = cv2.copyMakeBorder(
-                    m, top, bottom, left, right, borderType=cv2.BORDER_CONSTANT,
-                    value=0.0)
+
         return results
 
     def __repr__(self):

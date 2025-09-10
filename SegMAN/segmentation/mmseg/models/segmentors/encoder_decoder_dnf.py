@@ -77,17 +77,11 @@ class EncoderDecoderDNF(BaseSegmentor):
                 target_device = feat0.device
                 depth_t = kwargs.get('depth')
                 normal_t = kwargs.get('normal')
-                depth_mask_t = kwargs.get('depth_mask', None)
                 if isinstance(depth_t, torch.Tensor):
                     depth_t = depth_t.to(device=target_device, dtype=target_dtype)
                 if isinstance(normal_t, torch.Tensor):
                     normal_t = normal_t.to(device=target_device, dtype=target_dtype)
-                if isinstance(depth_mask_t, torch.Tensor):
-                    # keep mask as float in same dtype for safe math
-                    depth_mask_t = depth_mask_t.to(device=target_device, dtype=target_dtype)
                 dn_input = {'rgb_feats': x, 'depth': depth_t, 'normal': normal_t}
-                if depth_mask_t is not None:
-                    dn_input['depth_mask'] = depth_mask_t
                 # Prefer dict-style input for geometry-aware necks
                 try:
                     x = self.neck(dn_input)

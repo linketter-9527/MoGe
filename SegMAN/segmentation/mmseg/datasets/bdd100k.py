@@ -1,8 +1,6 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 from .builder import DATASETS
 from .custom import CustomDataset
-import os.path as osp
-
 
 @DATASETS.register_module()
 class BDD100KDataset(CustomDataset):
@@ -21,8 +19,6 @@ class BDD100KDataset(CustomDataset):
                  img_suffix='.jpg',
                  seg_map_suffix='.png',
                  reduce_zero_label=False,
-                 depth_dir=None,
-                 normal_dir=None,
                  data_root=None,
                  **kwargs):
         # Note: data_root is also accepted by CustomDataset. We pass it down
@@ -32,20 +28,3 @@ class BDD100KDataset(CustomDataset):
             reduce_zero_label=reduce_zero_label,
             data_root=data_root,
             **kwargs)
-        # Additional dirs for depth/normal
-        self.depth_dir = depth_dir
-        self.normal_dir = normal_dir
-        # join with data_root if provided and not absolute
-        if self.data_root is not None:
-            if self.depth_dir is not None and not osp.isabs(self.depth_dir):
-                self.depth_dir = osp.join(self.data_root, self.depth_dir)
-            if self.normal_dir is not None and not osp.isabs(self.normal_dir):
-                self.normal_dir = osp.join(self.data_root, self.normal_dir)
-
-    def pre_pipeline(self, results):
-        """Prepare results dict for pipeline and add depth/normal prefixes."""
-        super().pre_pipeline(results)
-        if getattr(self, 'depth_dir', None) is not None:
-            results['depth_prefix'] = self.depth_dir
-        if getattr(self, 'normal_dir', None) is not None:
-            results['normal_prefix'] = self.normal_dir

@@ -275,12 +275,9 @@ def main(
             
             # 保存元数据
             metadata = {
-                'depth_scale': 1.0,  # 深度缩放因子
-                'invalid_value': 0.0,  # 无效值
-                'color_order': 'BGR',  # 颜色通道顺序
                 'depth_dtype': 'float16',
                 'normal_dtype': 'float16',
-                'image_dtype': 'uint8',
+                'image_dtype': 'float16',
                 'height': height,
                 'width': width
             }
