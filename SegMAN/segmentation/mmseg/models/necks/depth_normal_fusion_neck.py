@@ -139,6 +139,14 @@ class DepthNormalFusionNeck(nn.Module):
             assert (depth is not None) and (normal is not None), \
                 "dict input must provide both 'depth' and 'normal' tensors"
             
+            # Handle the case where depth/normal are lists (e.g., in distributed testing)
+            if isinstance(depth, list):
+                depth = torch.cat(depth, dim=0)
+            if isinstance(normal, list):
+                normal = torch.cat(normal, dim=0)
+            if isinstance(depth_mask, list):
+                depth_mask = torch.cat(depth_mask, dim=0)
+            
             # Don't modify depth here, keep original values for later masking at fusion level
             dn = torch.cat([depth, normal], dim=1)
             return rgb_feats, dn, depth_mask

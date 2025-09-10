@@ -128,7 +128,7 @@ def main(
     
     total_seg_time = 0.0
     total_moge_time = 0.0
-    total_edge_time = 0.0
+    # total_edge_time = 0.0
 
     for image_path in (pbar := tqdm(image_paths, desc='Inference', disable=len(image_paths) <= 1)):
         image = cv2.cvtColor(cv2.imread(str(image_path)), cv2.COLOR_BGR2RGB)
@@ -158,27 +158,24 @@ def main(
         # 执行语义分割（如果SegMAN模型已加载）
         seg_result = None
         if seg_model is not None:
-            try:
-                # 将MoGe2输出的depth/normal直接传入分割推理，以实现几何引导融合
-                # 注意：mmseg默认使用BGR图像，这里将RGB图像转换为BGR再传入
-                seg_img_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-                seg_result = inference_segmentor_dnf(seg_model, seg_img_bgr, depth=depth, normal=normal)
-                # 显示或保存分割结果
-                if save_seg_:
-                    show_result_pyplot_dnf(seg_model, seg_img_bgr, seg_result, get_palette(seg_palette), 
-                                        out_file=str(save_path / f'{file_prefix}seg.png'), opacity=0.9, block=False)
-                # print(f"Semantic segmentation completed for {image_path}")
-            except Exception as e:
-                print(f"Semantic segmentation failed for {image_path}: {e}")
+            # 将MoGe2输出的depth/normal直接传入分割推理，以实现几何引导融合，注意：mmseg默认使用BGR图像，这里将RGB图像转换为BGR再传入
+            seg_img_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            seg_result = inference_segmentor_dnf(seg_model, seg_img_bgr, depth=depth, normal=normal)
+            # 显示或保存分割结果
+            if save_seg_:
+                show_result_pyplot_dnf(seg_model, seg_img_bgr, seg_result, get_palette(seg_palette), 
+                                    out_file=str(save_path / f'{file_prefix}seg.png'), opacity=0.9, block=False)
         seg_elapsed = time.time() - seg_start_time
         print(f"[SegMAN] Semantic segmentation took {seg_elapsed:.3f} seconds.")
         total_seg_time += seg_elapsed
 
         # print(f"[Debug] depth:  shape: {depth.shape}, dtype: {depth.dtype}")
         # print(f"[Debug] normal:  shape: {normal.shape}, dtype: {normal.dtype}")
-
+        
+        """
         edge_start_time = time.time()
         geo_edge = extract_edge_from_depth_normal(depth, normal, mode="canny")
+        """
 
         # 保存单张边缘图，转换为8位灰度图 (0-255)
         # edge_8bit = (geo_edge * 255).astype(np.uint8)
@@ -188,7 +185,9 @@ def main(
         # seg_mask = seg_result[extract_target].astype(np.uint8)
         # target_edge = extract_target_edge(seg_mask, geo_edge, class_id=extract_target, dilation_size=5)
 
+        """
         seg_mask = (seg_result[0] == extract_target).astype(np.uint8)  # 直接生成目标类别掩码
+        """
 
         """
         plt.figure(figsize=(8, 6))
@@ -199,7 +198,9 @@ def main(
         plt.show(block=True)
         """
 
+        """
         target_edge = extract_target_edge(seg_mask, geo_edge, dilation_size=5)
+        """
 
         # cv2.imwrite(str(save_path / f'{file_prefix}target_edge.png'), target_edge)
 
@@ -218,6 +219,7 @@ def main(
         )        
         """
 
+        """
         edge_elapsed = time.time() - edge_start_time
         print(f"[edge] Extract edge took {edge_elapsed:.3f} seconds.")
         total_edge_time += edge_elapsed
@@ -229,6 +231,7 @@ def main(
             color=(255, 0, 0),  # 红色边沿
             thickness=2
         )
+        """
 
         if save_edge_:
             # 保存边沿可视化结果
@@ -298,7 +301,7 @@ def main(
 
     print(f"Total SegMAN time: {total_seg_time:.3f} seconds.")
     print(f"Total MoGe time: {total_moge_time:.3f} seconds.")
-    print(f"Total edge time: {total_edge_time:.3f} seconds.")
+    # print(f"Total edge time: {total_edge_time:.3f} seconds.")
 
 if __name__ == '__main__':
     main()

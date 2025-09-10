@@ -244,6 +244,7 @@ def main():
     # passing checkpoint meta for saving best checkpoint
     meta.update(cfg.checkpoint_config.meta)
     
+    """
     # Add nan detection hook to optimizer config
     if cfg.get('optimizer_config', None) is None:
         cfg.optimizer_config = {}
@@ -253,6 +254,7 @@ def main():
     cfg.optimizer_config['type'] = 'NanDetectionHook'
     cfg.optimizer_config['detect_loss_nan'] = True
     cfg.optimizer_config['detect_grad_nan'] = True
+    """
     
     train_segmentor_dnf(
         model,

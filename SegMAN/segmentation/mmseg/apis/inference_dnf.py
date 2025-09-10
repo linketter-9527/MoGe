@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 import mmcv
 import numpy as np
 import torch
-from mmcv.parallel import collate, scatter
+from mmcv.parallel import collate, scatter, DataContainer as DC
 from mmcv.runner import load_checkpoint
 
 from mmseg.datasets.pipelines import Compose
+from mmseg.datasets.pipelines.formatting_dnf import to_tensorDNF
 from mmseg.models import build_segmentor
 
 
@@ -87,57 +88,59 @@ def inference_segmentor_dnf(model, img, depth=None, normal=None):
     device = next(model.parameters()).device  # model device
     # build the data pipeline
     pipeline_rest = cfg.data.test.pipeline[1:]
-    # 当提供了内存中的几何张量时，移除依赖文件名的 AddDepthNormalPathsDNF
+    # 当提供了内存中的几何张量时，移除依赖文件名的 AddDepthNormalPathsDNF 和 LoadNpyDepthNormalFromFileDNF
     if depth is not None and normal is not None:
-        def _is_add_dn(t):
-            return isinstance(t, dict) and t.get('type') == 'AddDepthNormalPathsDNF'
-        pipeline_rest = [t for t in pipeline_rest if not _is_add_dn(t)]
+        def _is_dn_related(t):
+            return (isinstance(t, dict) and 
+                   (t.get('type') == 'AddDepthNormalPathsDNF' or 
+                    t.get('type') == 'LoadNpyDepthNormalFromFileDNF'))
+        pipeline_rest = [t for t in pipeline_rest if not _is_dn_related(t)]
     test_pipeline = [LoadImage()] + pipeline_rest
     test_pipeline = Compose(test_pipeline)
     # prepare data (single image)
-    img_data = test_pipeline(dict(img))
+    img_data = test_pipeline({'img': img})
+    
+    # 当提供了内存中的几何张量时，手动添加并格式化depth和normal到结果中
+    if depth is not None and normal is not None:
+        # 处理depth数据：统一转换为(C, H, W)格式的DataContainer
+        if torch.is_tensor(depth):
+            depth = depth.cpu().numpy()
+        
+        # 统一depth格式为(H, W, C)
+        if depth.ndim == 2:  # (H, W) -> (H, W, 1)
+            depth = depth[:, :, None]
+        elif depth.ndim == 3 and depth.shape[0] == 1:  # (1, H, W) -> (H, W, 1)
+            depth = depth.transpose(1, 2, 0)
+        
+        # 转换为(C, H, W)并包装为DataContainer
+        depth = np.ascontiguousarray(depth.transpose(2, 0, 1)).astype(np.float32)
+        img_data['depth'] = DC(to_tensorDNF(depth), stack=True)
+        
+        # 处理normal数据：统一转换为(C, H, W)格式的DataContainer
+        if torch.is_tensor(normal):
+            normal = normal.cpu().numpy()
+        
+        # 统一normal格式为(3, H, W)
+        if normal.ndim == 3 and normal.shape[2] == 3:  # (H, W, 3) -> (3, H, W)
+            normal = normal.transpose(2, 0, 1)
+        elif normal.ndim == 4 and normal.shape[0] == 1:  # (1, 3, H, W) -> (3, H, W)
+            normal = normal[0]
+        
+        # 包装为DataContainer
+        normal = np.ascontiguousarray(normal).astype(np.float32)
+        img_data['normal'] = DC(to_tensorDNF(normal), stack=True)
+    
     data = collate([img_data], samples_per_gpu=1)
     if next(model.parameters()).is_cuda:
-        # scatter to specified GPU
-        data = scatter(data, [device])[0]
+        # scatter to specified GPU，获取设备索引（整数）而不是torch.device对象
+        device_index = device.index if device.index is not None else 0
+        scattered_data = scatter(data, [device_index])
+        if isinstance(scattered_data, list):
+            data = scattered_data[0]
+        else:
+            data = scattered_data
     else:
         data['img_metas'] = [i.data[0] for i in data['img_metas']]
-
-    # optionally attach in-memory geometry tensors (single image case)
-    def _to_tensor_nd(arr, is_normal=False):
-        if arr is None:
-            return None
-        if not torch.is_tensor(arr):
-            arr = torch.from_numpy(arr)
-        arr = arr.float()
-        if arr.dim() == 2:  # (H,W) depth
-            arr = arr.unsqueeze(0).unsqueeze(0)
-        elif arr.dim() == 3:
-            if is_normal:
-                # accept (H,W,3) -> (3,H,W)
-                if arr.shape[-1] == 3 and arr.shape[0] != 3:
-                    arr = arr.permute(2, 0, 1)
-                if arr.shape[0] == 1 and arr.shape[-1] != 3:
-                    arr = arr.repeat(3, 1, 1)
-                arr = arr.unsqueeze(0)
-            else:
-                if arr.shape[-1] == 1 and arr.shape[0] != 1:
-                    arr = arr.permute(2, 0, 1)  # -> (1,H,W)
-                if arr.shape[0] != 1:
-                    arr = arr[:1, ...]  # ensure 1 channel
-                arr = arr.unsqueeze(0)  # -> (1,1,H,W)
-        elif arr.dim() == 4:
-            pass
-        else:
-            raise ValueError('Unsupported geometry tensor shape')
-        return arr.to(device)
-
-    if depth is not None and normal is not None:
-        depth_t = _to_tensor_nd(depth, is_normal=False)
-        normal_t = _to_tensor_nd(normal, is_normal=True)
-        if depth_t is not None and normal_t is not None:
-            data['depth'] = depth_t
-            data['normal'] = normal_t
 
     # forward the model
     with torch.no_grad():

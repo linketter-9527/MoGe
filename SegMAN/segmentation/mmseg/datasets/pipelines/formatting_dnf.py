@@ -312,7 +312,16 @@ class CollectDNF(object):
                 img_meta[key] = results[key]
         data['img_metas'] = DC(img_meta, cpu_only=True)
         for key in self.keys:
-            data[key] = results[key]
+            if key in results:
+                data[key] = results[key]
+            else:
+                # 对于缺失的几何数据键，提供默认值或跳过
+                if key in ['depth', 'normal', 'depth_mask']:
+                    # 这些是几何数据键，如果缺失可以跳过
+                    continue
+                else:
+                    # 对于其他必需键，抛出错误
+                    raise KeyError(f"Required key '{key}' not found in results")
         return data
 
     def __repr__(self):

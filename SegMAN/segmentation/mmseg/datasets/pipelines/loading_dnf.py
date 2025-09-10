@@ -228,6 +228,7 @@ class LoadNpyDepthNormalFromFileDNF(object):
         depth = arr[:, :, 3].astype(np.float32)
         # Build finite mask (valid=1.0 where finite, invalid=0.0 where inf)
         depth_mask = np.isfinite(depth).astype(np.float32)
+        depth = np.where(np.isfinite(depth), depth, 1024.0)
         # Normal channels float16 -> float32; keep raw values (no re-normalization here)
         normal = arr[:, :, 4:7].astype(np.float32)
         # Keep original normal values (no re-normalization); invalid regions will be masked later in the neck
