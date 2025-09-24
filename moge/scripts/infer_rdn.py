@@ -134,12 +134,12 @@ def main(
 
     save_path = Path(output_path)
     save_path.mkdir(exist_ok=True, parents=True)
-    depth_dir = save_path / "depth"
-    depth_dir.mkdir(exist_ok=True, parents=True)
-    normal_dir = save_path / "normal"
-    normal_dir.mkdir(exist_ok=True, parents=True)
-    mask_dir = save_path / "mask"
-    mask_dir.mkdir(exist_ok=True, parents=True)
+    # depth_dir = save_path / "depth"
+    # depth_dir.mkdir(exist_ok=True, parents=True)
+    # normal_dir = save_path / "normal"
+    # normal_dir.mkdir(exist_ok=True, parents=True)
+    # mask_dir = save_path / "mask"
+    # mask_dir.mkdir(exist_ok=True, parents=True)
     rdn_dir = save_path / "rdn"
     rdn_dir.mkdir(exist_ok=True, parents=True)
     meta_dir = save_path / "meta"

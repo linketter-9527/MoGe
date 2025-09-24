@@ -8,12 +8,12 @@ from collections import defaultdict
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
 def plot_curve(log_dicts, args):
     if args.backend is not None:
         plt.switch_backend(args.backend)
     sns.set_style(args.style)
-    # if legend is None, use {filename}_{key} as legend
+
+    # 自动生成 legend
     legend = args.legend
     if legend is None:
         legend = []
@@ -21,50 +21,59 @@ def plot_curve(log_dicts, args):
             for metric in args.keys:
                 legend.append(f'{json_log}_{metric}')
     assert len(legend) == (len(args.json_logs) * len(args.keys))
-    metrics = args.keys
 
+    metrics = args.keys
     num_metrics = len(metrics)
+
+    # 创建 subplot
+    fig, axes = plt.subplots(num_metrics, 1, figsize=(10, num_metrics*3), sharex=False)
+    if num_metrics == 1:
+        axes = [axes]
+
     for i, log_dict in enumerate(log_dicts):
-        epochs = list(log_dict.keys())
+        # log_dict[epoch] -> dict of lists
+        epochs = sorted(log_dict.keys(), key=lambda x: float(x))
+        
         for j, metric in enumerate(metrics):
-            print(f'plot curve of {args.json_logs[i]}, metric is {metric}')
-            plot_epochs = []
-            plot_iters = []
-            plot_values = []
-            # In some log files exist lines of validation,
-            # `mode` list is used to only collect iter number
-            # of training line.
+            ax = axes[j]
+            plot_x, plot_y = [], []
+
             for epoch in epochs:
                 epoch_logs = log_dict[epoch]
-                if metric not in epoch_logs.keys():
+                if metric not in epoch_logs:
                     continue
-                if metric in ['mIoU', 'mAcc', 'aAcc']:
-                    plot_epochs.append(epoch)
-                    plot_values.append(epoch_logs[metric][0])
-                else:
-                    for idx in range(len(epoch_logs[metric])):
-                        if epoch_logs['mode'][idx] == 'train':
-                            plot_iters.append(epoch_logs['iter'][idx])
-                            plot_values.append(epoch_logs[metric][idx])
-            ax = plt.gca()
+
+                # 遍历所有记录的值
+                for idx in range(len(epoch_logs[metric])):
+                    # 训练指标只选 mode=='train'
+                    if metric not in ['mIoU', 'mAcc', 'aAcc']:
+                        if epoch_logs['mode'][idx] != 'train':
+                            continue
+                    # x 轴都用 iter
+                    plot_x.append(epoch_logs['iter'][idx])
+                    plot_y.append(epoch_logs[metric][idx])
+
             label = legend[i * num_metrics + j]
             if metric in ['mIoU', 'mAcc', 'aAcc']:
-                ax.set_xticks(plot_epochs)
-                plt.xlabel('epoch')
-                plt.plot(plot_epochs, plot_values, label=label, marker='o')
+                ax.plot(plot_x, plot_y, label=label, marker='o')
+                ax.set_xlabel('Iteration')
             else:
-                plt.xlabel('iter')
-                plt.plot(plot_iters, plot_values, label=label, linewidth=0.5)
-        plt.legend()
-        if args.title is not None:
-            plt.title(args.title)
+                ax.plot(plot_x, plot_y, label=label, linewidth=0.5)
+                ax.set_xlabel('Iteration')
+
+            ax.set_ylabel(metric)
+            ax.legend()
+
+    if args.title is not None:
+        fig.suptitle(args.title)
+
+    plt.tight_layout()
     if args.out is None:
         plt.show()
     else:
         print(f'save curve to: {args.out}')
         plt.savefig(args.out)
         plt.cla()
-
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Analyze Json Log')

@@ -7,6 +7,7 @@ _base_ = [
 
 # model settings
 norm_cfg = dict(type='SyncBN', requires_grad=True)
+
 model = dict(
     type='EncoderDecoder',
     backbone=dict(
@@ -38,7 +39,7 @@ optimizer = dict(_delete_=True, type='AdamW', lr=0.00006, betas=(0.9, 0.999), we
 
 lr_config = dict(_delete_=True, policy='poly',
                  warmup='linear',
-                 warmup_iters=1500,
+                 warmup_iters=1000,
                  warmup_ratio=1e-6,
                  power=1.0, min_lr=0.0, by_epoch=False)
 

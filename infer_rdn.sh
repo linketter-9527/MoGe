@@ -1,6 +1,6 @@
 python moge/scripts/infer_rdn.py \
-    -i example/train \
-    -o output/train \
+    -i SegMAN/segmentation/data/cityscapes/leftImg8bit/test/munich \
+    -o SegMAN/segmentation/data/cityscapes/leftImg8bit/test/munich_npy \
     --pretrained weights/moge-2-vitl-normal.pt \
     --device cuda:0 \
     --seg-config SegMAN/segmentation/local_configs/segman/large/segman_l_cityscapes.py \

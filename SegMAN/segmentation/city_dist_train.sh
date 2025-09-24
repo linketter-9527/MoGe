@@ -1,4 +1,4 @@
-bash tools/dist_train_dnf.sh \
+bash tools/dist_train.sh \
     local_configs/segman/tiny/segman_t_cityscapes.py \
     2 \
     --work-dir outputs/segman_4bs_dp0.0_t_cityscapes \

@@ -6,7 +6,9 @@ _base_ = [
 ]
 
 # model settings
-norm_cfg = dict(type='SyncBN', requires_grad=True)
+# norm_cfg = dict(type='SyncBN', requires_grad=True)
+norm_cfg = dict(type='GN', num_groups=32, requires_grad=True)
+
 model = dict(
     type='EncoderDecoderDNF',
     backbone=dict(
@@ -18,7 +20,7 @@ model = dict(
         type='DepthNormalFusionNeck',
         in_channels=[32, 64, 144, 192],
         dn_in_channels=4,
-        fusion_type='gate',
+        fusion_type='mcgf',
     ),
     decode_head=dict(
         type='SegMANDecoder',
@@ -40,12 +42,13 @@ model = dict(
 optimizer = dict(_delete_=True, type='AdamW', lr=0.00006, betas=(0.9, 0.999), weight_decay=0.01,
                  paramwise_cfg=dict(custom_keys={'pos_block': dict(decay_mult=0.),
                                                  'norm': dict(decay_mult=0.),
-                                                 'head': dict(lr_mult=10.)
+                                                 'head': dict(lr_mult=10.),
+                                                 'neck': dict(lr_mult=10.),  # <<=== 新增
                                                  }))
 
 lr_config = dict(_delete_=True, policy='poly',
                  warmup='linear',
-                 warmup_iters=1500,
+                 warmup_iters=1500,  # 1500
                  warmup_ratio=1e-6,
                  power=1.0, min_lr=0.0, by_epoch=False)
 
